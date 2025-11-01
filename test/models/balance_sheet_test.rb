@@ -34,6 +34,20 @@ class BalanceSheetTest < ActiveSupport::TestCase
     assert_equal 50000 - 1000, BalanceSheet.new(@family).net_worth
   end
 
+  test "uses most recent exchange rate on or before today" do
+    ExchangeRate.create!(
+      from_currency: "CAD",
+      to_currency: @family.currency,
+      date: 2.days.ago.to_date,
+      rate: BigDecimal("1.25")
+    )
+
+    create_account(balance: 100, currency: "CAD", accountable: Depository.new)
+
+    assert_in_delta 125, BalanceSheet.new(@family).assets.total, 0.0001
+    assert_in_delta 125, BalanceSheet.new(@family).net_worth, 0.0001
+  end
+
   test "disabled accounts do not affect totals" do
     create_account(balance: 1000, accountable: CreditCard.new)
     create_account(balance: 10000, accountable: Depository.new)
@@ -77,7 +91,8 @@ class BalanceSheetTest < ActiveSupport::TestCase
 
   private
     def create_account(attributes = {})
-      account = @family.accounts.create! name: "Test", currency: "USD", **attributes
+      default_attributes = { name: "Test", currency: "USD" }
+      account = @family.accounts.create!(**default_attributes.merge(attributes))
       account
     end
 end

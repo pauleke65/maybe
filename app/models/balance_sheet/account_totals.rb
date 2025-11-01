@@ -46,16 +46,29 @@ class BalanceSheet::AccountTotals
 
     def query
       @query ||= Rails.cache.fetch(cache_key) do
+        select_converted_balance = ActiveRecord::Base.sanitize_sql_array([
+          "SUM(accounts.balance * CASE WHEN accounts.currency = ? THEN 1 ELSE exchange_rates.rate END) AS converted_balance",
+          family.currency
+        ])
+
         visible_accounts
           .joins(ActiveRecord::Base.sanitize_sql_array([
-            "LEFT JOIN exchange_rates ON exchange_rates.date = ? AND accounts.currency = exchange_rates.from_currency AND exchange_rates.to_currency = ?",
-            Date.current,
-            family.currency
+            <<~SQL,
+              LEFT JOIN LATERAL (
+                SELECT er.rate
+                FROM exchange_rates er
+                WHERE er.from_currency = accounts.currency
+                  AND er.to_currency = ?
+                  AND er.date <= ?
+                ORDER BY er.date DESC
+                LIMIT 1
+              ) exchange_rates ON TRUE
+            SQL
+            family.currency,
+            Date.current
           ]))
-          .select(
-            "accounts.*",
-            "SUM(accounts.balance * COALESCE(exchange_rates.rate, 1)) as converted_balance"
-          )
+          .select("accounts.*")
+          .select(select_converted_balance)
           .group(:classification, :accountable_type, :id)
           .to_a
       end
