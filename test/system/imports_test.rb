@@ -5,6 +5,9 @@ class ImportsTest < ApplicationSystemTestCase
 
   setup do
     sign_in @user = users(:family_admin)
+
+    # Trade securities will be imported as "offline" tickers
+    Security.stubs(:provider).returns(nil)
   end
 
   test "transaction import" do
@@ -12,18 +15,24 @@ class ImportsTest < ApplicationSystemTestCase
 
     click_on "Import transactions"
 
+    within_testid("import-tabs") do
+      click_on "Copy & Paste"
+    end
+
     fill_in "import[raw_file_str]", with: file_fixture("imports/transactions.csv").read
 
-    find('input[type="submit"][value="Upload CSV"]').click
+    within "form" do
+      click_on "Upload CSV"
+    end
 
-    select "Date", from: "Date*"
-    select "YYYY-MM-DD", from: "Date format"
-    select "Amount", from: "Amount"
-    select "Account", from: "Account (optional)"
-    select "Name", from: "Name (optional)"
-    select "Category", from: "Category (optional)"
-    select "Tags", from: "Tags (optional)"
-    select "Notes", from: "Notes (optional)"
+    select "Date", from: "import[date_col_label]"
+    select "YYYY-MM-DD", from: "import[date_format]"
+    select "Amount", from: "import[amount_col_label]"
+    select "Account", from: "import[account_col_label]"
+    select "Name", from: "import[name_col_label]"
+    select "Category", from: "import[category_col_label]"
+    select "Tags", from: "import[tags_col_label]"
+    select "Notes", from: "import[notes_col_label]"
 
     click_on "Apply configuration"
 
@@ -56,11 +65,22 @@ class ImportsTest < ApplicationSystemTestCase
 
     click_on "Import investments"
 
+    within_testid("import-tabs") do
+      click_on "Copy & Paste"
+    end
+
     fill_in "import[raw_file_str]", with: file_fixture("imports/trades.csv").read
 
-    find('input[type="submit"][value="Upload CSV"]').click
+    within "form" do
+      click_on "Upload CSV"
+    end
 
-    select "YYYY-MM-DD", from: "Date format"
+    select "date", from: "import[date_col_label]"
+    select "YYYY-MM-DD", from: "import[date_format]"
+    select "qty", from: "import[qty_col_label]"
+    select "ticker", from: "import[ticker_col_label]"
+    select "price", from: "import[price_col_label]"
+    select "account", from: "import[account_col_label]"
 
     click_on "Apply configuration"
 
@@ -87,9 +107,19 @@ class ImportsTest < ApplicationSystemTestCase
 
     click_on "Import accounts"
 
+    within_testid("import-tabs") do
+      click_on "Copy & Paste"
+    end
+
     fill_in "import[raw_file_str]", with: file_fixture("imports/accounts.csv").read
 
-    find('input[type="submit"][value="Upload CSV"]').click
+    within "form" do
+      click_on "Upload CSV"
+    end
+
+    select "type", from: "import[entity_type_col_label]"
+    select "name", from: "import[name_col_label]"
+    select "amount", from: "import[amount_col_label]"
 
     click_on "Apply configuration"
 
@@ -125,9 +155,15 @@ class ImportsTest < ApplicationSystemTestCase
 
     click_on "Import from Mint"
 
+    within_testid("import-tabs") do
+      click_on "Copy & Paste"
+    end
+
     fill_in "import[raw_file_str]", with: file_fixture("imports/mint.csv").read
 
-    find('input[type="submit"][value="Upload CSV"]').click
+    within "form" do
+      click_on "Upload CSV"
+    end
 
     click_on "Apply configuration"
 

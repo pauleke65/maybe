@@ -4,7 +4,7 @@
 %>
 
 <% content_for :sidebar do %>
-  <%= render "settings/nav" %>
+  <%= render "settings/settings_nav" %>
 <% end %>
 
 <div class="space-y-4">
@@ -13,18 +13,20 @@
     <div class="space-y-6">
       <div class="grid grid-cols-2 gap-4">
         <% @backup_codes.each do |code| %>
-          <div class="p-3 bg-gray-100 rounded-lg font-mono text-lg">
+          <div class="p-3 bg-surface-inset rounded-lg font-mono text-lg">
             <%= code %>
           </div>
         <% end %>
       </div>
 
-      <div class="mt-6">
-        <%= link_to t(".continue"), settings_security_path, class: "w-full btn btn--primary" %>
-      </div>
+      <%= render DS::Link.new(
+        text: t(".continue"),
+        href: settings_security_path,
+        variant: "primary",
+        full_width: true
+      ) %>
     </div>
   <% end %>
 
   <%= settings_nav_footer %>
 </div>
- 

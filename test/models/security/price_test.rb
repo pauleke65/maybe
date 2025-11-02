@@ -2,113 +2,63 @@ require "test_helper"
 require "ostruct"
 
 class Security::PriceTest < ActiveSupport::TestCase
+  include ProviderTestHelper
+
   setup do
     @provider = mock
+    Security.stubs(:provider).returns(@provider)
 
-    Security::Price.stubs(:security_prices_provider).returns(@provider)
-  end
-
-  test "security price provider nil if no api key provided" do
-    Security::Price.unstub(:security_prices_provider)
-
-    with_env_overrides SYNTH_API_KEY: nil do
-      assert_not Security::Price.security_prices_provider
-    end
+    @security = securities(:aapl)
   end
 
   test "finds single security price in DB" do
-    @provider.expects(:fetch_security_prices).never
-    security = securities(:aapl)
-
+    @provider.expects(:fetch_security_price).never
     price = security_prices(:one)
 
-    assert_equal price, Security::Price.find_price(security: security, date: price.date)
+    assert_equal price, @security.find_or_fetch_price(date: price.date)
   end
 
-  test "caches prices to DB" do
-    expected_price = 314.34
-    security = securities(:aapl)
-    tomorrow = Date.current + 1.day
+  test "caches prices from provider to DB" do
+    price_date = 10.days.ago.to_date
 
-    @provider.expects(:fetch_security_prices)
-            .with(ticker: security.ticker, mic_code: security.exchange_mic, start_date: tomorrow, end_date: tomorrow)
-            .once
-            .returns(
-              OpenStruct.new(
-                success?: true,
-                prices: [ { date: tomorrow, price: expected_price, currency: "USD" } ]
-              )
-            )
+    expected_price = Security::Price.new(
+      security: @security,
+      date: price_date,
+      price: 314.34,
+      currency: "USD"
+    )
 
-    fetched_rate = Security::Price.find_price(security: security, date: tomorrow, cache: true)
-    refetched_rate = Security::Price.find_price(security: security, date: tomorrow, cache: true)
+    expect_provider_price(security: @security, price: expected_price, date: price_date)
 
-    assert_equal expected_price, fetched_rate.price
-    assert_equal expected_price, refetched_rate.price
+    assert_difference "Security::Price.count", 1 do
+      fetched_price = @security.find_or_fetch_price(date: price_date, cache: true)
+      assert_equal expected_price.price, fetched_price.price
+    end
   end
 
   test "returns nil if no price found in DB or from provider" do
     security = securities(:aapl)
     Security::Price.delete_all # Clear any existing prices
 
-    @provider.expects(:fetch_security_prices)
-             .with(ticker: security.ticker, mic_code: security.exchange_mic, start_date: Date.current, end_date: Date.current)
-             .once
-             .returns(OpenStruct.new(success?: false))
+    with_provider_response = provider_error_response(StandardError.new("Test error"))
 
-    assert_not Security::Price.find_price(security: security, date: Date.current)
+    @provider.expects(:fetch_security_price)
+             .with(symbol: security.ticker, exchange_operating_mic: security.exchange_operating_mic, date: Date.current)
+             .returns(with_provider_response)
+
+    assert_not @security.find_or_fetch_price(date: Date.current)
   end
 
-  test "returns nil if price not found in DB and provider disabled" do
-    Security::Price.unstub(:security_prices_provider)
-    security = Security.new(ticker: "NVDA")
-
-    with_env_overrides SYNTH_API_KEY: nil do
-      assert_not Security::Price.find_price(security: security, date: Date.current)
+  private
+    def expect_provider_price(security:, price:, date:)
+      @provider.expects(:fetch_security_price)
+               .with(symbol: security.ticker, exchange_operating_mic: security.exchange_operating_mic, date: date)
+               .returns(provider_success_response(price))
     end
-  end
 
-  test "fetches multiple dates at once" do
-    @provider.expects(:fetch_security_prices).never
-    security = securities(:aapl)
-    price1 = security_prices(:one) # AAPL today
-    price2 = security_prices(:two) # AAPL yesterday
-
-    fetched_prices = Security::Price.find_prices(security: security, start_date: 1.day.ago.to_date, end_date: Date.current).sort_by(&:date)
-
-    assert_equal price1, fetched_prices[1]
-    assert_equal price2, fetched_prices[0]
-  end
-
-  test "caches multiple prices to DB" do
-    missing_price = 213.21
-    security = securities(:aapl)
-
-    @provider.expects(:fetch_security_prices)
-             .with(ticker: security.ticker,
-                  mic_code: security.exchange_mic,
-                  start_date: 2.days.ago.to_date,
-                  end_date: 2.days.ago.to_date)
-             .returns(OpenStruct.new(success?: true, prices: [ { date: 2.days.ago.to_date, price: missing_price, currency: "USD" } ]))
-             .once
-
-    price1 = security_prices(:one) # AAPL today
-    price2 = security_prices(:two) # AAPL yesterday
-
-    fetched_prices = Security::Price.find_prices(security: security, start_date: 2.days.ago.to_date, end_date: Date.current, cache: true)
-    refetched_prices = Security::Price.find_prices(security: security, start_date: 2.days.ago.to_date, end_date: Date.current, cache: true)
-
-    assert_equal [ missing_price, price2.price, price1.price ], fetched_prices.sort_by(&:date).map(&:price)
-    assert_equal [ missing_price, price2.price, price1.price ], refetched_prices.sort_by(&:date).map(&:price)
-
-    assert Security::Price.exists?(security: security, date: 2.days.ago.to_date, price: missing_price)
-  end
-
-  test "returns empty array if no prices found in DB or from provider" do
-    Security::Price.unstub(:security_prices_provider)
-
-    with_env_overrides SYNTH_API_KEY: nil do
-      assert_equal [], Security::Price.find_prices(security: Security.new(ticker: "NVDA"), start_date: 10.days.ago.to_date, end_date: Date.current)
+    def expect_provider_prices(security:, prices:, start_date:, end_date:)
+      @provider.expects(:fetch_security_prices)
+               .with(security, start_date: start_date, end_date: end_date)
+               .returns(provider_success_response(prices))
     end
-  end
 end

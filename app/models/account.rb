@@ -1,26 +1,24 @@
 class Account < ApplicationRecord
-  include Syncable, Monetizable, Issuable
+  include AASM, Syncable, Monetizable, Chartable, Linkable, Enrichable, Anchorable, Reconcileable
 
   validates :name, :balance, :currency, presence: true
 
   belongs_to :family
   belongs_to :import, optional: true
-  belongs_to :plaid_account, optional: true
 
   has_many :import_mappings, as: :mappable, dependent: :destroy, class_name: "Import::Mapping"
-  has_many :entries, dependent: :destroy, class_name: "Account::Entry"
-  has_many :transactions, through: :entries, source: :entryable, source_type: "Account::Transaction"
-  has_many :valuations, through: :entries, source: :entryable, source_type: "Account::Valuation"
-  has_many :trades, through: :entries, source: :entryable, source_type: "Account::Trade"
-  has_many :holdings, dependent: :destroy, class_name: "Account::Holding"
+  has_many :entries, dependent: :destroy
+  has_many :transactions, through: :entries, source: :entryable, source_type: "Transaction"
+  has_many :valuations, through: :entries, source: :entryable, source_type: "Valuation"
+  has_many :trades, through: :entries, source: :entryable, source_type: "Trade"
+  has_many :holdings, dependent: :destroy
   has_many :balances, dependent: :destroy
-  has_many :issues, as: :issuable, dependent: :destroy
 
   monetize :balance, :cash_balance
 
   enum :classification, { asset: "asset", liability: "liability" }, validate: { allow_nil: true }
 
-  scope :active, -> { where(is_active: true, scheduled_for_deletion: false) }
+  scope :visible, -> { where(status: [ "draft", "active" ]) }
   scope :assets, -> { where(classification: "asset") }
   scope :liabilities, -> { where(classification: "liability") }
   scope :alphabetically, -> { order(:name) }
@@ -32,56 +30,42 @@ class Account < ApplicationRecord
 
   accepts_nested_attributes_for :accountable, update_only: true
 
-  def institution_domain
-    return nil unless plaid_account&.plaid_item&.institution_url.present?
-    URI.parse(plaid_account.plaid_item.institution_url).host.gsub(/^www\./, "")
+  # Account state machine
+  aasm column: :status, timestamps: true do
+    state :active, initial: true
+    state :draft
+    state :disabled
+    state :pending_deletion
+
+    event :activate do
+      transitions from: [ :draft, :disabled ], to: :active
+    end
+
+    event :disable do
+      transitions from: [ :draft, :active ], to: :disabled
+    end
+
+    event :enable do
+      transitions from: :disabled, to: :active
+    end
+
+    event :mark_for_deletion do
+      transitions from: [ :draft, :active, :disabled ], to: :pending_deletion
+    end
   end
 
   class << self
-    def by_group(period: Period.all, currency: Money.default_currency.iso_code)
-      grouped_accounts = { assets: ValueGroup.new("Assets", currency), liabilities: ValueGroup.new("Liabilities", currency) }
-
-      Accountable.by_classification.each do |classification, types|
-        types.each do |type|
-          accounts = self.where(accountable_type: type)
-          if accounts.any?
-            group = grouped_accounts[classification.to_sym].add_child_group(type, currency)
-            accounts.each do |account|
-              group.add_value_node(
-                account,
-                account.balance_money.exchange_to(currency, fallback_rate: 0),
-                account.series(period: period, currency: currency)
-              )
-            end
-          end
-        end
-      end
-
-      grouped_accounts
-    end
-
     def create_and_sync(attributes)
       attributes[:accountable_attributes] ||= {} # Ensure accountable is created, even if empty
       account = new(attributes.merge(cash_balance: attributes[:balance]))
+      initial_balance = attributes.dig(:accountable_attributes, :initial_balance)&.to_d
 
       transaction do
-        # Create 2 valuations for new accounts to establish a value history for users to see
-        account.entries.build(
-          name: "Current Balance",
-          date: Date.current,
-          amount: account.balance,
-          currency: account.currency,
-          entryable: Account::Valuation.new
-        )
-        account.entries.build(
-          name: "Initial Balance",
-          date: 1.day.ago.to_date,
-          amount: 0,
-          currency: account.currency,
-          entryable: Account::Valuation.new
-        )
-
         account.save!
+
+        manager = Account::OpeningBalanceManager.new(account)
+        result = manager.set_opening_balance(balance: initial_balance || account.balance)
+        raise result.error if result.error
       end
 
       account.sync_later
@@ -89,135 +73,91 @@ class Account < ApplicationRecord
     end
   end
 
+  def institution_domain
+    url_string = plaid_account&.plaid_item&.institution_url
+    return nil unless url_string.present?
+
+    begin
+      uri = URI.parse(url_string)
+      # Use safe navigation on .host before calling gsub
+      uri.host&.gsub(/^www\./, "")
+    rescue URI::InvalidURIError
+      # Log a warning if the URL is invalid and return nil
+      Rails.logger.warn("Invalid institution URL encountered for account #{id}: #{url_string}")
+      nil
+    end
+  end
+
   def destroy_later
-    update!(scheduled_for_deletion: true)
+    mark_for_deletion!
     DestroyJob.perform_later(self)
   end
 
-  def sync_data(start_date: nil)
-    update!(last_synced_at: Time.current)
-
-    Syncer.new(self, start_date: start_date).run
-  end
-
-  def post_sync
-    broadcast_remove_to(family, target: "syncing-notice")
-    resolve_stale_issues
-    accountable.post_sync
-  end
-
-  def series(period: Period.last_30_days, currency: nil)
-    balance_series = balances.in_period(period).where(currency: currency || self.currency)
-
-    if balance_series.empty? && period.date_range.end == Date.current
-      TimeSeries.new([ { date: Date.current, value: balance_money.exchange_to(currency || self.currency) } ])
-    else
-      TimeSeries.from_collection(balance_series, :balance_money, favorable_direction: asset? ? "up" : "down")
-    end
-  rescue Money::ConversionError
-    TimeSeries.new([])
-  end
-
-  def original_balance
-    balance_amount = balances.chronological.first&.balance || balance
-    Money.new(balance_amount, currency)
+  # Override destroy to handle error recovery for accounts
+  def destroy
+    super
+  rescue => e
+    # If destruction fails, transition back to disabled state
+    # This provides a cleaner recovery path than the generic scheduled_for_deletion flag
+    disable! if may_disable?
+    raise e
   end
 
   def current_holdings
-    holdings.where(currency: currency, date: holdings.maximum(:date)).order(amount: :desc)
+    holdings.where(currency: currency)
+            .where.not(qty: 0)
+            .where(
+              id: holdings.select("DISTINCT ON (security_id) id")
+                          .where(currency: currency)
+                          .order(:security_id, date: :desc)
+            )
+            .order(amount: :desc)
   end
 
-  def favorable_direction
-    classification == "asset" ? "up" : "down"
+  def start_date
+    first_entry_date = entries.minimum(:date) || Date.current
+    first_entry_date - 1.day
   end
 
-  def enrich_data
-    DataEnricher.new(self).run
+  def lock_saved_attributes!
+    super
+    accountable.lock_saved_attributes!
   end
 
-  def update_with_sync!(attributes)
-    should_update_balance = attributes[:balance] && attributes[:balance].to_d != balance
-
-    transaction do
-      update!(attributes)
-      update_balance!(attributes[:balance]) if should_update_balance
-    end
-
-    sync_later
+  def first_valuation
+    entries.valuations.order(:date).first
   end
 
-  def update_balance!(balance)
-    valuation = entries.account_valuations.find_by(date: Date.current)
+  def first_valuation_amount
+    first_valuation&.amount_money || balance_money
+  end
 
-    if valuation
-      valuation.update! amount: balance
+  # Get short version of the subtype label
+  def short_subtype_label
+    accountable_class.short_subtype_label_for(subtype) || accountable_class.display_name
+  end
+
+  # Get long version of the subtype label
+  def long_subtype_label
+    accountable_class.long_subtype_label_for(subtype) || accountable_class.display_name
+  end
+
+  # The balance type determines which "component" of balance is being tracked.
+  # This is primarily used for balance related calculations and updates.
+  #
+  # "Cash" = "Liquid"
+  # "Non-cash" = "Illiquid"
+  # "Investment" = A mix of both, including brokerage cash (liquid) and holdings (illiquid)
+  def balance_type
+    case accountable_type
+    when "Depository", "CreditCard"
+      :cash
+    when "Property", "Vehicle", "OtherAsset", "Loan", "OtherLiability"
+      :non_cash
+    when "Investment", "Crypto"
+      :investment
     else
-      entries.create! \
-        date: Date.current,
-        name: "Balance update",
-        amount: balance,
-        currency: currency,
-        entryable: Account::Valuation.new
-    end
-  end
-
-  def transfer_match_candidates
-    Account::Entry.select([
-      "inflow_candidates.entryable_id as inflow_transaction_id",
-      "outflow_candidates.entryable_id as outflow_transaction_id",
-      "ABS(inflow_candidates.date - outflow_candidates.date) as date_diff"
-    ]).from("account_entries inflow_candidates")
-      .joins("
-        JOIN account_entries outflow_candidates ON (
-          inflow_candidates.amount < 0 AND
-          outflow_candidates.amount > 0 AND
-          inflow_candidates.amount = -outflow_candidates.amount AND
-          inflow_candidates.currency = outflow_candidates.currency AND
-          inflow_candidates.account_id <> outflow_candidates.account_id AND
-          inflow_candidates.date BETWEEN outflow_candidates.date - 4 AND outflow_candidates.date + 4
-        )
-      ").joins("
-        LEFT JOIN transfers existing_transfers ON (
-          existing_transfers.inflow_transaction_id = inflow_candidates.entryable_id OR
-          existing_transfers.outflow_transaction_id = outflow_candidates.entryable_id
-        )
-      ")
-      .joins("LEFT JOIN rejected_transfers ON (
-        rejected_transfers.inflow_transaction_id = inflow_candidates.entryable_id AND
-        rejected_transfers.outflow_transaction_id = outflow_candidates.entryable_id
-      )")
-      .joins("JOIN accounts inflow_accounts ON inflow_accounts.id = inflow_candidates.account_id")
-      .joins("JOIN accounts outflow_accounts ON outflow_accounts.id = outflow_candidates.account_id")
-      .where("inflow_accounts.family_id = ? AND outflow_accounts.family_id = ?", self.family_id, self.family_id)
-      .where("inflow_accounts.is_active = true AND inflow_accounts.scheduled_for_deletion = false")
-      .where("outflow_accounts.is_active = true AND outflow_accounts.scheduled_for_deletion = false")
-      .where("inflow_candidates.entryable_type = 'Account::Transaction' AND outflow_candidates.entryable_type = 'Account::Transaction'")
-      .where(existing_transfers: { id: nil })
-      .order("date_diff ASC") # Closest matches first
-  end
-
-  def auto_match_transfers!
-    # Exclude already matched transfers
-    candidates_scope = transfer_match_candidates.where(rejected_transfers: { id: nil })
-
-    # Track which transactions we've already matched to avoid duplicates
-    used_transaction_ids = Set.new
-
-    candidates = []
-
-    Transfer.transaction do
-      candidates_scope.each do |match|
-        next if used_transaction_ids.include?(match.inflow_transaction_id) ||
-               used_transaction_ids.include?(match.outflow_transaction_id)
-
-        Transfer.create!(
-          inflow_transaction_id: match.inflow_transaction_id,
-          outflow_transaction_id: match.outflow_transaction_id,
-        )
-
-        used_transaction_ids << match.inflow_transaction_id
-        used_transaction_ids << match.outflow_transaction_id
-      end
+      raise "Unknown account type: #{accountable_type}"
     end
   end
 end

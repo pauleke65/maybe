@@ -29,12 +29,16 @@ class Import::ConfigurationsController < ApplicationController
         :account_col_label,
         :qty_col_label,
         :ticker_col_label,
+        :exchange_operating_mic_col_label,
         :price_col_label,
         :entity_type_col_label,
         :notes_col_label,
         :currency_col_label,
         :date_format,
-        :signage_convention
+        :number_format,
+        :signage_convention,
+        :amount_type_strategy,
+        :amount_type_inflow_value,
       )
     end
 end

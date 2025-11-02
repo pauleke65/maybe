@@ -30,11 +30,10 @@ class Import::Row < ApplicationRecord
     end
   end
 
-  def sync_mappings
-    Import::CategoryMapping.sync(import) if import.column_keys.include?(:category)
-    Import::TagMapping.sync(import) if import.column_keys.include?(:tags)
-    Import::AccountMapping.sync(import) if import.column_keys.include?(:account)
-    Import::AccountTypeMapping.sync(import) if import.column_keys.include?(:entity_type)
+  def update_and_sync(params)
+    assign_attributes(params)
+    save!(validate: false)
+    import.sync_mappings
   end
 
   private
@@ -45,7 +44,19 @@ class Import::Row < ApplicationRecord
 
     # In the Maybe system, positive amounts == "outflows", so we must reverse signage
     def apply_transaction_signage_convention(value)
-      value * (import.signage_convention == "inflows_positive" ? -1 : 1)
+      if import.amount_type_strategy == "signed_amount"
+        value * (import.signage_convention == "inflows_positive" ? -1 : 1)
+      elsif import.amount_type_strategy == "custom_column"
+        inflow_value = import.amount_type_inflow_value
+
+        if entity_type == inflow_value
+          value * -1
+        else
+          value
+        end
+      else
+        raise "Unknown amount type strategy for import: #{import.amount_type_strategy}"
+      end
     end
 
     def required_columns
@@ -64,7 +75,7 @@ class Import::Row < ApplicationRecord
         return
       end
 
-      min_date = Account::Entry.min_supported_date
+      min_date = Entry.min_supported_date
       max_date = Date.current
 
       if parsed_date < min_date || parsed_date > max_date

@@ -24,8 +24,6 @@ module Maybe
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
 
-    config.active_job.queue_adapter = :good_job
-
     # TODO: This is here for incremental adoption of localization.  This can be removed when all translations are implemented.
     config.i18n.fallbacks = true
 
@@ -35,5 +33,13 @@ module Maybe
     if Rails.application.credentials.active_record_encryption.present?
       config.active_record.encryption = Rails.application.credentials.active_record_encryption
     end
+
+    config.view_component.preview_controller = "LookbooksController"
+    config.lookbook.preview_display_options = {
+      theme: [ "light", "dark" ] # available in view as params[:theme]
+    }
+
+    # Enable Rack::Attack middleware for API rate limiting
+    config.middleware.use Rack::Attack
   end
 end

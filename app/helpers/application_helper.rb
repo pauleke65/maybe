@@ -1,8 +1,30 @@
 module ApplicationHelper
   include Pagy::Frontend
 
-  def icon(key, size: "md", color: "current")
-    render partial: "shared/icon", locals: { key:, size:, color: }
+  def styled_form_with(**options, &block)
+    options[:builder] = StyledFormBuilder
+    form_with(**options, &block)
+  end
+
+  def icon(key, size: "md", color: "default", custom: false, as_button: false, **opts)
+    extra_classes = opts.delete(:class)
+    sizes = { xs: "w-3 h-3", sm: "w-4 h-4", md: "w-5 h-5", lg: "w-6 h-6", xl: "w-7 h-7", "2xl": "w-8 h-8" }
+    colors = { default: "fg-gray", white: "fg-inverse", success: "text-success", warning: "text-warning", destructive: "text-destructive", current: "text-current" }
+
+    icon_classes = class_names(
+      "shrink-0",
+      sizes[size.to_sym],
+      colors[color.to_sym],
+      extra_classes
+    )
+
+    if custom
+      inline_svg_tag("#{key}.svg", class: icon_classes, **opts)
+    elsif as_button
+      render DS::Button.new(variant: "icon", class: extra_classes, icon: key, size: size, type: "button", **opts)
+    else
+      lucide_icon(key, class: icon_classes, **opts)
+    end
   end
 
   # Convert alpha (0-1) to 8-digit hex (00-FF)
@@ -23,104 +45,8 @@ module ApplicationHelper
     content_for(:header_description) { page_description }
   end
 
-  def family_notifications_stream
-    turbo_stream_from [ Current.family, :notifications ] if Current.family
-  end
-
-  def family_stream
-    turbo_stream_from Current.family if Current.family
-  end
-
-  def render_flash_notifications
-    notifications = flash.flat_map do |type, message_or_messages|
-      Array(message_or_messages).map do |message|
-        render partial: "shared/notification", locals: { type: type, message: message }
-      end
-    end
-
-    safe_join(notifications)
-  end
-
-  ##
-  # Helper to open a centered and overlayed modal with custom contents
-  #
-  # @example Basic usage
-  #   <%= modal classes: "custom-class" do %>
-  #     <div>Content here</div>
-  #   <% end %>
-  #
-  def modal(options = {}, &block)
-    content = capture &block
-    render partial: "shared/modal", locals: { content:, classes: options[:classes] }
-  end
-
-  ##
-  # Helper to open a drawer on the right side of the screen with custom contents
-  #
-  # @example Basic usage
-  #   <%= drawer do %>
-  #     <div>Content here</div>
-  #   <% end %>
-  #
-  def drawer(reload_on_close: false, &block)
-    content = capture &block
-    render partial: "shared/drawer", locals: { content:, reload_on_close: }
-  end
-
-  def disclosure(title, default_open: true, &block)
-    content = capture &block
-    render partial: "shared/disclosure", locals: { title: title, content: content, open: default_open }
-  end
-
-  def sidebar_link_to(name, path, options = {})
-    is_current = current_page?(path) || (request.path.start_with?(path) && path != "/")
-
-    classes = [
-      "flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium text-secondary",
-      (is_current ? "bg-white text-primary shadow-xs border-alpha-black-50" : "hover:bg-gray-100 border-transparent")
-    ].compact.join(" ")
-
-    link_to path, **options.merge(class: classes), aria: { current: ("page" if current_page?(path)) } do
-      concat(lucide_icon(options[:icon], class: "w-5 h-5")) if options[:icon]
-      concat(name)
-    end
-  end
-
-  def mixed_hex_styles(hex)
-    color = hex || "#1570EF" # blue-600
-
-    <<-STYLE.strip
-      background-color: color-mix(in srgb, #{color} 10%, white);
-      border-color: color-mix(in srgb, #{color} 30%, white);
-      color: #{color};
-    STYLE
-  end
-
-  def circle_logo(name, hex: nil, size: "md")
-    render partial: "shared/circle_logo", locals: { name: name, hex: hex, size: size }
-  end
-
-  def return_to_path(params, fallback = root_path)
-    uri = URI.parse(params[:return_to] || fallback)
-    uri.relative? ? uri.path : root_path
-  end
-
-  def trend_styles(trend)
-    fallback = { bg_class: "bg-gray-500/5", text_class: "text-secondary", symbol: "", icon: "minus" }
-    return fallback if trend.nil? || trend.direction.flat?
-
-    bg_class, text_class, symbol, icon = case trend.direction
-    when "up"
-      trend.favorable_direction.down? ? [ "bg-red-500/5", "text-red-500", "+", "arrow-up" ] : [ "bg-green-500/5", "text-green-500", "+", "arrow-up" ]
-    when "down"
-      trend.favorable_direction.down? ? [ "bg-green-500/5", "text-green-500", "-", "arrow-down" ] : [ "bg-red-500/5", "text-red-500", "-", "arrow-down" ]
-    when "flat"
-      [ "bg-gray-500/5", "text-secondary", "", "minus" ]
-    else
-      raise ArgumentError, "Invalid trend direction: #{trend.direction}"
-    end
-
-    { bg_class: bg_class, text_class: text_class, symbol: symbol, icon: icon }
+  def page_active?(path)
+    current_page?(path) || (request.path.start_with?(path) && path != "/")
   end
 
   # Wrapper around I18n.l to support custom date formats
@@ -139,22 +65,12 @@ module ApplicationHelper
   def format_money(number_or_money, options = {})
     return nil unless number_or_money
 
-    money = Money.new(number_or_money)
-    options.reverse_merge!(money.format_options(I18n.locale))
-    number_to_currency(money.amount, options)
-  end
-
-  def format_money_without_symbol(number_or_money, options = {})
-    return nil unless number_or_money
-
-    money = Money.new(number_or_money)
-    options.reverse_merge!(money.format_options(I18n.locale))
-    ActiveSupport::NumberHelper.number_to_delimited(money.amount.round(options[:precision] || 0), { delimiter: options[:delimiter], separator: options[:separator] })
+    Money.new(number_or_money).format(options)
   end
 
   def totals_by_currency(collection:, money_method:, separator: " | ", negate: false)
     collection.group_by(&:currency)
-              .transform_values { |item| negate ? item.sum(&money_method) * -1 : item.sum(&money_method) }
+              .transform_values { |item| calculate_total(item, money_method, negate) }
               .map { |_currency, money| format_money(money) }
               .join(separator)
   end
@@ -166,4 +82,42 @@ module ApplicationHelper
 
     cookies[:admin] == "true"
   end
+
+  # Renders Markdown text using Redcarpet
+  def markdown(text)
+    return "" if text.blank?
+
+    renderer = Redcarpet::Render::HTML.new(
+      hard_wrap: true,
+      link_attributes: { target: "_blank", rel: "noopener noreferrer" }
+    )
+
+    markdown = Redcarpet::Markdown.new(
+      renderer,
+      autolink: true,
+      tables: true,
+      fenced_code_blocks: true,
+      strikethrough: true,
+      superscript: true,
+      underline: true,
+      highlight: true,
+      quote: true,
+      footnotes: true
+    )
+
+    markdown.render(text).html_safe
+  end
+
+  private
+    def calculate_total(item, money_method, negate)
+      # Filter out transfer-type transactions from entries
+      # Only Entry objects have entryable transactions, Account objects don't
+      items = item.reject do |i|
+        i.is_a?(Entry) &&
+        i.entryable.is_a?(Transaction) &&
+        i.entryable.transfer?
+      end
+      total = items.sum(&money_method)
+      negate ? -total : total
+    end
 end

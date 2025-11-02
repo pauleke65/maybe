@@ -4,14 +4,14 @@
 %>
 
 <% content_for :sidebar do %>
-  <%= render "settings/nav" %>
+  <%= render "settings/settings_nav" %>
 <% end %>
 
 <div class="space-y-4">
   <h1 class="text-primary text-xl font-medium mb-4"><%= t(".page_title") %></h1>
   <%= settings_section title: t(".scan_title"), subtitle: t(".scan_description") do %>
     <div class="space-y-6">
-      <div>
+      <div class="qrcode">
         <%= generate_mfa_qr_code(Current.user.provisioning_uri) %>
       </div>
 
@@ -26,13 +26,13 @@
                  readonly
                  autocomplete="off"
                  value="<%= Current.user.otp_secret %>"
-                 class="text-sm bg-gray-50 px-2 py-1 rounded border border-gray-200 w-96 font-mono">
+                 class="text-sm bg-container px-2 py-1 rounded border border-secondary w-96 font-mono">
           <button data-action="clipboard#copy" class="text-secondary hover:text-gray-700">
             <span data-clipboard-target="iconDefault">
-              <%= lucide_icon "copy", class: "w-5 h-5" %>
+              <%= icon "copy" %>
             </span>
             <span class="hidden" data-clipboard-target="iconSuccess">
-              <%= lucide_icon "check", class: "w-5 h-5" %>
+              <%= icon "check" %>
             </span>
           </button>
         </div>
@@ -57,7 +57,7 @@
             placeholder: t(".code_placeholder") %>
 
           <div class="flex justify-end mt-4">
-            <%= f.submit t(".verify_button"), class: "bg-gray-900 hover:bg-gray-700 cursor-pointer text-white rounded-lg px-3 py-2" %>
+            <%= f.submit t(".verify_button") %>
           </div>
         </div>
       <% end %>

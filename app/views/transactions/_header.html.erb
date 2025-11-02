@@ -1,25 +1,29 @@
-<header class="flex justify-between items-center text-primary font-medium">
-  <h1 class="text-xl">Transactions</h1>
-  <div class="flex items-center gap-5">
-    <div class="flex items-center gap-2">
-      <%= contextual_menu do %>
-        <div class="w-48 p-1 text-sm leading-6 text-primary bg-white shadow-lg shrink rounded-xl ring-1 ring-gray-900/5">
-          <%= contextual_menu_modal_action_item t(".edit_categories"), categories_path, icon: "shapes", turbo_frame: :_top %>
-          <%= contextual_menu_modal_action_item t(".edit_tags"), tags_path, icon: "tags", turbo_frame: :_top %>
-          <%= contextual_menu_modal_action_item t(".edit_merchants"), merchants_path, icon: "store", turbo_frame: :_top %>
-          <%= contextual_menu_modal_action_item t(".edit_imports"), imports_path, icon: "hard-drive-upload", turbo_frame: :_top %>
-        </div>
-      <% end %>
+<%# locals: (entry:) %>
 
-      <%= link_to new_import_path, class: "btn btn--outline flex items-center gap-2", data: { turbo_frame: "modal" } do %>
-        <%= lucide_icon("download", class: "text-secondary w-4 h-4") %>
-        <p class="text-sm font-medium text-primary"><%= t(".import") %></p>
-      <% end %>
+<%= tag.header class: "mb-4 space-y-1", id: dom_id(entry, :header) do %>
+  <div class="flex items-center gap-4">
+    <h3 class="font-medium">
+      <span class="text-2xl">
+        <%= format_money -entry.amount_money %>
+      </span>
 
-      <%= link_to new_account_transaction_path, class: "rounded-lg bg-gray-900 text-white flex items-center gap-1 justify-center hover:bg-gray-700 px-3 py-2", data: { turbo_frame: :modal } do %>
-        <%= lucide_icon("plus", class: "w-5 h-5") %>
-        <p class="text-sm font-medium">New transaction</p>
-      <% end %>
-    </div>
+      <span class="text-lg text-secondary">
+        <%= entry.currency %>
+      </span>
+    </h3>
+
+    <% if entry.transaction.transfer? %>
+      <%= icon "arrow-left-right", class: "mt-1" %>
+    <% end %>
+
+    <% if entry.linked? %>
+      <span title="Linked with Plaid">
+        <%= icon("refresh-ccw", size: "sm") %>
+      </span>
+    <% end %>
   </div>
-</header>
+
+  <span class="text-sm text-secondary">
+    <%= I18n.l(entry.date, format: :long) %>
+  </span>
+<% end %>

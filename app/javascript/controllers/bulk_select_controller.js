@@ -7,7 +7,7 @@ export default class extends Controller {
     "group",
     "selectionBar",
     "selectionBarText",
-    "bulkEditDrawerTitle",
+    "bulkEditDrawerHeader",
   ];
   static values = {
     singularLabel: String,
@@ -25,8 +25,9 @@ export default class extends Controller {
     document.removeEventListener("turbo:load", this._updateView);
   }
 
-  bulkEditDrawerTitleTargetConnected(element) {
-    element.innerText = `Edit ${
+  bulkEditDrawerHeaderTargetConnected(element) {
+    const headingTextEl = element.querySelector("h2");
+    headingTextEl.innerText = `Edit ${
       this.selectedIdsValue.length
     } ${this._pluralizedResourceName()}`;
   }
@@ -146,7 +147,9 @@ export default class extends Controller {
 
   _updateGroups() {
     this.groupTargets.forEach((group) => {
-      const rows = this.rowTargets.filter((row) => group.contains(row));
+      const rows = this.rowTargets.filter(
+        (row) => group.contains(row) && !row.disabled,
+      );
       const groupSelected =
         rows.length > 0 &&
         rows.every((row) => this.selectedIdsValue.includes(row.dataset.id));

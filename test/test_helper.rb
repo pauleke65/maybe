@@ -9,14 +9,19 @@ require_relative "../config/environment"
 
 ENV["RAILS_ENV"] ||= "test"
 
+# Set Plaid to sandbox mode for tests
+ENV["PLAID_ENV"] = "sandbox"
+ENV["PLAID_CLIENT_ID"] ||= "test_client_id"
+ENV["PLAID_SECRET"] ||= "test_secret"
+
 # Fixes Segfaults on M1 Macs when running tests in parallel (temporary workaround)
-# https://github.com/ged/ruby-pg/issues/538#issuecomment-1591629049
 ENV["PGGSSENCMODE"] = "disable"
 
 require "rails/test_help"
 require "minitest/mock"
 require "minitest/autorun"
 require "mocha/minitest"
+require "aasm/minitest"
 
 VCR.configure do |config|
   config.cassette_library_dir = "test/vcr_cassettes"
@@ -24,6 +29,12 @@ VCR.configure do |config|
   config.ignore_localhost = true
   config.default_cassette_options = { erb: true }
   config.filter_sensitive_data("<SYNTH_API_KEY>") { ENV["SYNTH_API_KEY"] }
+  config.filter_sensitive_data("<OPENAI_ACCESS_TOKEN>") { ENV["OPENAI_ACCESS_TOKEN"] }
+  config.filter_sensitive_data("<OPENAI_ORGANIZATION_ID>") { ENV["OPENAI_ORGANIZATION_ID"] }
+  config.filter_sensitive_data("<STRIPE_SECRET_KEY>") { ENV["STRIPE_SECRET_KEY"] }
+  config.filter_sensitive_data("<STRIPE_WEBHOOK_SECRET>") { ENV["STRIPE_WEBHOOK_SECRET"] }
+  config.filter_sensitive_data("<PLAID_CLIENT_ID>") { ENV["PLAID_CLIENT_ID"] }
+  config.filter_sensitive_data("<PLAID_SECRET>") { ENV["PLAID_SECRET"] }
 end
 
 module ActiveSupport
@@ -47,7 +58,7 @@ module ActiveSupport
 
     # Add more helper methods to be used by all tests here...
     def sign_in(user)
-      post sessions_path, params: { email: user.email, password: "password" }
+      post sessions_path, params: { email: user.email, password: user_password_test }
     end
 
     def with_env_overrides(overrides = {}, &block)
@@ -57,6 +68,10 @@ module ActiveSupport
     def with_self_hosting
       Rails.configuration.stubs(:app_mode).returns("self_hosted".inquiry)
       yield
+    end
+
+    def user_password_test
+      "maybetestpassword817983172"
     end
   end
 end

@@ -1,26 +1,31 @@
 class Investment < ApplicationRecord
   include Accountable
 
-  SUBTYPES = [
-    [ "Brokerage", "brokerage" ],
-    [ "Pension", "pension" ],
-    [ "Retirement", "retirement" ],
-    [ "401(k)", "401k" ],
-    [ "Traditional 401(k)", "traditional_401k" ],
-    [ "Roth 401(k)", "roth_401k" ],
-    [ "529 Plan", "529_plan" ],
-    [ "Health Savings Account", "hsa" ],
-    [ "Mutual Fund", "mutual_fund" ],
-    [ "Traditional IRA", "traditional_ira" ],
-    [ "Roth IRA", "roth_ira" ],
-    [ "Angel", "angel" ]
-  ].freeze
+  SUBTYPES = {
+    "brokerage" => { short: "Brokerage", long: "Brokerage" },
+    "pension" => { short: "Pension", long: "Pension" },
+    "retirement" => { short: "Retirement", long: "Retirement" },
+    "401k" => { short: "401(k)", long: "401(k)" },
+    "roth_401k" => { short: "Roth 401(k)", long: "Roth 401(k)" },
+    "529_plan" => { short: "529 Plan", long: "529 Plan" },
+    "hsa" => { short: "HSA", long: "Health Savings Account" },
+    "mutual_fund" => { short: "Mutual Fund", long: "Mutual Fund" },
+    "ira" => { short: "IRA", long: "Traditional IRA" },
+    "roth_ira" => { short: "Roth IRA", long: "Roth IRA" },
+    "angel" => { short: "Angel", long: "Angel" }
+  }.freeze
 
-  def color
-    "#1570EF"
-  end
+  class << self
+    def color
+      "#1570EF"
+    end
 
-  def icon
-    "line-chart"
+    def classification
+      "asset"
+    end
+
+    def icon
+      "line-chart"
+    end
   end
 end

@@ -7,7 +7,9 @@ class MfaControllerTest < ActionDispatch::IntegrationTest
   end
 
   def sign_out
-    delete session_path(@user.sessions.last) if @user.sessions.any?
+    @user.sessions.each do |session|
+      delete session_path(session)
+    end
   end
 
   test "redirects to root if MFA already enabled" do
@@ -54,7 +56,7 @@ class MfaControllerTest < ActionDispatch::IntegrationTest
     @user.enable_mfa!
     sign_out
 
-    post sessions_path, params: { email: @user.email, password: "password" }
+    post sessions_path, params: { email: @user.email, password: user_password_test }
     assert_redirected_to verify_mfa_path
 
     get verify_mfa_path
@@ -67,7 +69,7 @@ class MfaControllerTest < ActionDispatch::IntegrationTest
     @user.enable_mfa!
     sign_out
 
-    post sessions_path, params: { email: @user.email, password: "password" }
+    post sessions_path, params: { email: @user.email, password: user_password_test }
     totp = ROTP::TOTP.new(@user.otp_secret, issuer: "Maybe")
 
     post verify_mfa_path, params: { code: totp.now }
@@ -81,7 +83,7 @@ class MfaControllerTest < ActionDispatch::IntegrationTest
     @user.enable_mfa!
     sign_out
 
-    post sessions_path, params: { email: @user.email, password: "password" }
+    post sessions_path, params: { email: @user.email, password: user_password_test }
     backup_code = @user.otp_backup_codes.first
 
     post verify_mfa_path, params: { code: backup_code }
@@ -96,7 +98,7 @@ class MfaControllerTest < ActionDispatch::IntegrationTest
     @user.enable_mfa!
     sign_out
 
-    post sessions_path, params: { email: @user.email, password: "password" }
+    post sessions_path, params: { email: @user.email, password: user_password_test }
     post verify_mfa_path, params: { code: "invalid" }
 
     assert_response :unprocessable_entity

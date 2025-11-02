@@ -1,4 +1,6 @@
-class Settings::ProfilesController < SettingsController
+class Settings::ProfilesController < ApplicationController
+  layout "settings"
+
   def show
     @user = Current.user
     @users = Current.family.users.order(:created_at)
@@ -21,9 +23,11 @@ class Settings::ProfilesController < SettingsController
     end
 
     if @user.destroy
-      flash[:notice] = t("settings.profiles.destroy.member_removed")
+      # Also destroy the invitation associated with this user for this family
+      Current.family.invitations.find_by(email: @user.email)&.destroy
+      flash[:notice] = "Member removed successfully."
     else
-      flash[:alert] = t("settings.profiles.destroy.member_removal_failed")
+      flash[:alert] = "Failed to remove member."
     end
 
     redirect_to settings_profile_path

@@ -1,42 +1,44 @@
-<%# locals: (account:, title: nil, subtitle: nil) %>
+<%# locals: (account:, title:, subtitle: nil) %>
 
 <header class="space-y-4">
   <div class="flex items-center gap-4">
-    <% content = yield %>
+    <div class="flex items-center gap-3 overflow-hidden">
+      <%= render "accounts/logo", account: account %>
 
-    <% if content.present? %>
-      <%= content %>
-    <% else %>
-      <div class="flex items-center gap-3 overflow-hidden">
-        <%= render "accounts/logo", account: account %>
-
+      <div class="flex items-center gap-2">
         <div class="truncate">
-          <h2 class="font-medium text-xl truncate"><%= title || account.name %></h2>
+          <div class="flex items-center gap-3">
+            <h2 class="font-medium text-xl truncate <%= "animate-pulse" if account.syncing? %>"><%= title %></h2>
+            <% if account.draft? %>
+              <%= render DS::Link.new(
+                  text: "Complete setup",
+                  href: edit_account_path(account),
+                  variant: :outline,
+                  size: :sm,
+                  frame: :modal
+                ) %>
+            <% end %>
+          </div>
           <% if subtitle.present? %>
             <p class="text-sm text-secondary"><%= subtitle %></p>
           <% end %>
         </div>
       </div>
-    <% end %>
+    </div>
 
-    <div class="flex items-center gap-3 ml-auto">
-      <% if account.plaid_account_id.present? %>
-        <% if Rails.env.development? %>
-          <%= button_to sync_plaid_item_path(account.plaid_account.plaid_item), disabled: account.syncing?, data: { turbo: false }, class: "flex items-center gap-2", title: "Sync Account" do %>
-            <%= lucide_icon "refresh-cw", class: "w-4 h-4 text-secondary hover:text-subdued" %>
-          <% end %>
-        <% end %>
-      <% else %>
-        <%= button_to sync_account_path(account), disabled: account.syncing?, data: { turbo: false }, class: "flex items-center gap-2", title: "Sync Account" do %>
-          <%= lucide_icon "refresh-cw", class: "w-4 h-4 text-secondary hover:text-subdued" %>
-        <% end %>
+    <div class="flex items-center gap-1 ml-auto">
+      <% if Rails.env.development? || self_hosted? %>
+        <%= icon(
+            "refresh-cw",
+            as_button: true,
+            size: "sm",
+            href: account.linked? ? sync_plaid_item_path(account.plaid_account.plaid_item) : sync_account_path(account),
+            disabled: account.syncing?,
+            frame: :_top
+          ) %>
       <% end %>
 
       <%= render "accounts/show/menu", account: account %>
     </div>
   </div>
-
-  <% if account.highest_priority_issue %>
-    <%= render partial: "issues/issue", locals: { issue: account.highest_priority_issue } %>
-  <% end %>
 </header>

@@ -6,6 +6,8 @@ en:
         description: Edit your data in the table below.  Red cells are invalid.
         errors_notice: You have errors in your data.  Hover over the error to see
           details.
+        errors_notice_mobile: You have errors in your data.  Tap over the error tooltip to see
+          details.
         title: Clean your data
     configurations:
       mint_import:
@@ -63,8 +65,8 @@ en:
       failed: Failed
       in_progress: In progress
       label: "%{type}: %{datetime}"
-      reverting: Reverting
       revert_failed: Revert failed
+      reverting: Reverting
       uploading: Processing rows
       view: View
     index:

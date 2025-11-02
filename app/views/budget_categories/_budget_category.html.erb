@@ -1,18 +1,24 @@
 <%# locals: (budget_category:) %>
 
 <%= turbo_frame_tag dom_id(budget_category), class: "w-full" do %>
-  <%= link_to budget_budget_category_path(budget_category.budget, budget_category), class: "group w-full p-4 flex items-center gap-3 bg-white", data: { turbo_frame: "drawer" } do %>
+  <%= link_to budget_budget_category_path(budget_category.budget, budget_category), class: "group w-full p-4 flex items-center gap-3 bg-container", data: { turbo_frame: "drawer" } do %>
 
     <% if budget_category.initialized? %>
       <div class="w-10 h-10 group-hover:scale-105 transition-all duration-300">
         <%= render "budget_categories/budget_category_donut", budget_category: budget_category %>
       </div>
     <% else %>
-      <div class="w-8 h-8 group-hover:scale-105 transition-all duration-300 rounded-full flex justify-center items-center" style="<%= mixed_hex_styles(budget_category.category.color) %>">
+      <div class="w-8 h-8 group-hover:scale-105 transition-all duration-300 rounded-full flex justify-center items-center" style="color: <%= budget_category.category.color %>">
         <% if budget_category.category.lucide_icon %>
-          <%= icon(budget_category.category.lucide_icon) %>
+          <%= icon(budget_category.category.lucide_icon, color: "current") %>
         <% else %>
-          <%= render "shared/circle_logo", name: budget_category.category.name, hex: budget_category.category.color %>
+          <%= render DS::FilledIcon.new(
+            variant: :text,
+            hex_color: budget_category.category.color,
+            text: budget_category.category.name,
+            size: "sm",
+            rounded: true
+          ) %>
         <% end %>
       </div>
     <% end %>
@@ -32,7 +38,7 @@
         <% end %>
       <% else %>
         <p class="text-sm text-secondary font-medium">
-          <%= format_money(budget_category.category.avg_monthly_total_money, precision: 0) %> avg
+          <%= budget_category.median_monthly_expense_money.format %> avg
         </p>
       <% end %>
     </div>

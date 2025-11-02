@@ -1,48 +1,46 @@
 <%# locals: (form:) %>
 
-<div
-  id="transaction-filters-menu"
-  data-menu-target="content"
-  data-controller="tabs"
-  data-tabs-active-class="bg-gray-25 text-primary"
-  data-tabs-default-tab-value="<%= get_default_transaction_search_filter[:key] %>"
-  class="hidden absolute flex z-10 h-80 w-[540px] top-12 right-0 border border-tertiary bg-white rounded-lg shadow-xs">
-  <div class="flex w-44 flex-col items-start p-3 text-sm font-medium text-secondary border-r border-r-alpha-black-100">
-    <% transaction_search_filters.each do |filter| %>
-      <button
-        class="flex text-secondary hover:bg-gray-25 items-center gap-2 px-3 rounded-md py-2 w-full"
-        type="button"
-        data-id="<%= filter[:key] %>"
-        data-tabs-target="btn"
-        data-action="tabs#select">
-        <%= lucide_icon(filter[:icon], class: "w-5 h-5") %>
-        <span class="text-sm font-medium"><%= t(".#{filter[:key]}") %></span>
-      </button>
-    <% end %>
-  </div>
-
-  <div class="flex flex-col grow">
-    <div class="grow p-3 border-b border-b-alpha-black-100 overflow-y-auto">
+<%= render DS::Tabs.new(
+  variant: :unstyled,
+  active_tab: get_default_transaction_search_filter[:key],
+  active_btn_classes: "bg-surface text-primary",
+  inactive_btn_classes: "text-secondary hover:bg-container-inset"
+) do |tabs| %>
+  <div id="transaction-filters-menu" class="flex flex-col md:flex-row h-[50vh] lg:max-h-auto z-10 md:h-80 w-full md:w-[540px] top-12 right-0 overflow-hidden">
+    <%= tabs.with_nav(classes: "shrink-0 flex w-full md:w-44 flex-row md:flex-col items-start p-3 text-sm font-medium text-secondary border-b md:border-b-0 md:border-r border-secondary overflow-x-auto md:overflow-x-visible") do |nav| %>
       <% transaction_search_filters.each do |filter| %>
-        <div id="<%= filter[:key] %>" data-tabs-target="tab">
-          <%= render partial: get_transaction_search_filter_partial_path(filter), locals: { form: form } %>
-        </div>
+        <%= nav.with_btn(id: filter[:key], label: filter[:label], classes: "w-full px-3 py-2 flex gap-2 items-center rounded-md") do %>
+          <%= icon(filter[:icon]) %>
+          <%= tag.span(filter[:label], class: "text-sm font-medium") %>
+        <% end %>
       <% end %>
-    </div>
+    <% end %>
 
-    <div class="flex justify-between items-center gap-2 bg-white p-3">
-      <div>
-        <% if @q.present? %>
-          <%= link_to t(".clear_filters"), transactions_path(clear_filters: true), class: "btn btn--ghost" %>
+    <div class="flex flex-col grow overflow-y-auto">
+      <div class="grow p-3 border-b border-secondary overflow-y-auto">
+        <% transaction_search_filters.each do |filter| %>
+          <%= tabs.with_panel(tab_id: filter[:key]) do %>
+            <%= render partial: get_transaction_search_filter_partial_path(filter), locals: { form: form } %>
+          <% end %>
         <% end %>
       </div>
 
-      <div>
-        <%= button_tag type: "reset", data: { action: "menu#close" }, class: "py-2 px-3 bg-gray-50 rounded-lg text-sm text-primary font-medium" do %>
-          <%= t(".cancel") %>
-        <% end %>
-        <%= form.submit t(".apply"), name: nil, class: "py-2 px-3 bg-gray-900 hover:bg-gray-700 rounded-lg text-sm text-white font-medium cursor-pointer" %>
+      <div class="flex justify-between items-center gap-2 bg-container p-3 shrink-0">
+        <div>
+          <% if @q.present? %>
+            <%= render DS::Link.new(
+            text: t(".clear_filters"),
+            variant: "ghost",
+            href: transactions_path(clear_filters: true),
+          ) %>
+          <% end %>
+        </div>
+
+        <div>
+          <%= render DS::Button.new(text: t(".cancel"), type: "button", variant: "ghost", data: { action: "DS--menu#close" }) %>
+          <%= render DS::Button.new(text: t(".apply")) %>
+        </div>
       </div>
     </div>
   </div>
-</div>
+<% end %>

@@ -10,7 +10,7 @@ class SettingsTest < ApplicationSystemTestCase
       [ "Accounts", accounts_path ],
       [ "Tags", tags_path ],
       [ "Categories", categories_path ],
-      [ "Merchants", merchants_path ],
+      [ "Merchants", family_merchants_path ],
       [ "Imports", imports_path ],
       [ "What's new", changelog_path ],
       [ "Feedback", feedback_path ]
@@ -33,12 +33,13 @@ class SettingsTest < ApplicationSystemTestCase
 
   test "can update self hosting settings" do
     Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    Provider::Registry.stubs(:get_provider).with(:synth).returns(nil)
     open_settings_from_sidebar
     assert_selector "li", text: "Self hosting"
     click_link "Self hosting"
     assert_current_path settings_hosting_path
     assert_selector "h1", text: "Self-Hosting"
-    check "setting_require_invite_for_signup", allow_label_click: true
+    check "setting[require_invite_for_signup]", allow_label_click: true
     click_button "Generate new code"
     assert_selector 'span[data-clipboard-target="source"]', visible: true, count: 1 # invite code copy widget
     copy_button = find('button[data-action="clipboard#copy"]', match: :first) # Find the first copy button (adjust if needed)
@@ -46,10 +47,18 @@ class SettingsTest < ApplicationSystemTestCase
     assert_selector 'span[data-clipboard-target="iconSuccess"]', visible: true, count: 1 # text copied and icon changed to checkmark
   end
 
+  test "does not show billing link if self hosting" do
+    Rails.application.config.app_mode.stubs(:self_hosted?).returns(true)
+    open_settings_from_sidebar
+    assert_no_selector "li", text: I18n.t("settings.settings_nav.billing_label")
+  end
+
   private
 
     def open_settings_from_sidebar
-      find("#user-menu").click
+      within "div[data-testid=user-menu]" do
+        find("button").click
+      end
       click_link "Settings"
     end
 end

@@ -1,12 +1,12 @@
 class CategoriesController < ApplicationController
-  layout :with_sidebar
-
   before_action :set_category, only: %i[edit update destroy]
   before_action :set_categories, only: %i[update edit]
   before_action :set_transaction, only: :create
 
   def index
     @categories = Current.family.categories.alphabetically
+
+    render layout: "settings"
   end
 
   def new
@@ -56,8 +56,13 @@ class CategoriesController < ApplicationController
     redirect_back_or_to categories_path, notice: t(".success")
   end
 
+  def destroy_all
+    Current.family.categories.destroy_all
+    redirect_back_or_to categories_path, notice: "All categories deleted"
+  end
+
   def bootstrap
-    Current.family.categories.bootstrap_defaults
+    Current.family.categories.bootstrap!
 
     redirect_back_or_to categories_path, notice: t(".success")
   end

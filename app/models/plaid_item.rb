@@ -1,5 +1,5 @@
 class PlaidItem < ApplicationRecord
-  include Plaidable, Syncable
+  include Syncable, Provided
 
   enum :plaid_region, { us: "us", eu: "eu" }
   enum :status, { good: "good", requires_update: "requires_update" }, default: :good
@@ -22,57 +22,23 @@ class PlaidItem < ApplicationRecord
   scope :ordered, -> { order(created_at: :desc) }
   scope :needs_update, -> { where(status: :requires_update) }
 
-  class << self
-    def create_from_public_token(token, item_name:, region:)
-      response = plaid_provider_for_region(region).exchange_public_token(token)
-
-      new_plaid_item = create!(
-        name: item_name,
-        plaid_id: response.item_id,
-        access_token: response.access_token,
-        plaid_region: region
-      )
-
-      new_plaid_item.sync_later
-    end
-  end
-
-  def sync_data(start_date: nil)
-    update!(last_synced_at: Time.current)
-
-    begin
-      plaid_data = fetch_and_load_plaid_data
-      update!(status: :good) if requires_update?
-      plaid_data
-    rescue Plaid::ApiError => e
-      handle_plaid_error(e)
-      raise e
-    end
-  end
-
   def get_update_link_token(webhooks_url:, redirect_url:)
-    begin
-      family.get_link_token(
-        webhooks_url: webhooks_url,
-        redirect_url: redirect_url,
-        region: plaid_region,
-        access_token: access_token
-      )
-    rescue Plaid::ApiError => e
-      error_body = JSON.parse(e.response_body)
+    family.get_link_token(
+      webhooks_url: webhooks_url,
+      redirect_url: redirect_url,
+      region: plaid_region,
+      access_token: access_token
+    )
+  rescue Plaid::ApiError => e
+    error_body = JSON.parse(e.response_body)
 
-      if error_body["error_code"] == "ITEM_NOT_FOUND"
-        # Mark the connection as invalid but don't auto-delete
-        update!(status: :requires_update)
-        raise PlaidConnectionLostError
-      else
-        raise e
-      end
+    if error_body["error_code"] == "ITEM_NOT_FOUND"
+      # Mark the connection as invalid but don't auto-delete
+      update!(status: :requires_update)
     end
-  end
 
-  def post_sync
-    family.broadcast_refresh
+    Sentry.capture_exception(e)
+    nil
   end
 
   def destroy_later
@@ -80,109 +46,75 @@ class PlaidItem < ApplicationRecord
     DestroyJob.perform_later(self)
   end
 
+  def import_latest_plaid_data
+    PlaidItem::Importer.new(self, plaid_provider: plaid_provider).import
+  end
+
+  # Reads the fetched data and updates internal domain objects
+  # Generally, this should only be called within a "sync", but can be called
+  # manually to "re-sync" the already fetched data
+  def process_accounts
+    plaid_accounts.each do |plaid_account|
+      PlaidAccount::Processor.new(plaid_account).process
+    end
+  end
+
+  # Once all the data is fetched, we can schedule account syncs to calculate historical balances
+  def schedule_account_syncs(parent_sync: nil, window_start_date: nil, window_end_date: nil)
+    accounts.each do |account|
+      account.sync_later(
+        parent_sync: parent_sync,
+        window_start_date: window_start_date,
+        window_end_date: window_end_date
+      )
+    end
+  end
+
+  # Saves the raw data fetched from Plaid API for this item
+  def upsert_plaid_snapshot!(item_snapshot)
+    assign_attributes(
+      available_products: item_snapshot.available_products,
+      billed_products: item_snapshot.billed_products,
+      raw_payload: item_snapshot,
+    )
+
+    save!
+  end
+
+  # Saves the raw data fetched from Plaid API for this item's institution
+  def upsert_plaid_institution_snapshot!(institution_snapshot)
+    assign_attributes(
+      institution_id: institution_snapshot.institution_id,
+      institution_url: institution_snapshot.url,
+      institution_color: institution_snapshot.primary_color,
+      raw_institution_payload: institution_snapshot
+    )
+
+    save!
+  end
+
+  def supports_product?(product)
+    supported_products.include?(product)
+  end
+
   private
-    def fetch_and_load_plaid_data
-      data = {}
-      item = plaid_provider.get_item(access_token).item
-      update!(available_products: item.available_products, billed_products: item.billed_products)
-
-      # Fetch and store institution details
-      if item.institution_id.present?
-        begin
-          institution = plaid_provider.get_institution(item.institution_id)
-          update!(
-            institution_id: item.institution_id,
-            institution_url: institution.institution.url,
-            institution_color: institution.institution.primary_color
-          )
-        rescue Plaid::ApiError => e
-          Rails.logger.warn("Error fetching institution details for item #{id}: #{e.message}")
-        end
-      end
-
-      fetched_accounts = plaid_provider.get_item_accounts(self).accounts
-      data[:accounts] = fetched_accounts || []
-
-      internal_plaid_accounts = fetched_accounts.map do |account|
-        internal_plaid_account = plaid_accounts.find_or_create_from_plaid_data!(account, family)
-        internal_plaid_account.sync_account_data!(account)
-        internal_plaid_account
-      end
-
-      fetched_transactions = safe_fetch_plaid_data(:get_item_transactions)
-      data[:transactions] = fetched_transactions || []
-
-      if fetched_transactions
-        transaction do
-          internal_plaid_accounts.each do |internal_plaid_account|
-            added = fetched_transactions.added.select { |t| t.account_id == internal_plaid_account.plaid_id }
-            modified = fetched_transactions.modified.select { |t| t.account_id == internal_plaid_account.plaid_id }
-            removed = fetched_transactions.removed.select { |t| t.account_id == internal_plaid_account.plaid_id }
-
-            internal_plaid_account.sync_transactions!(added:, modified:, removed:)
-          end
-
-          update!(next_cursor: fetched_transactions.cursor)
-        end
-      end
-
-      fetched_investments = safe_fetch_plaid_data(:get_item_investments)
-      data[:investments] = fetched_investments || []
-
-      if fetched_investments
-        transaction do
-          internal_plaid_accounts.each do |internal_plaid_account|
-            transactions = fetched_investments.transactions.select { |t| t.account_id == internal_plaid_account.plaid_id }
-            holdings = fetched_investments.holdings.select { |h| h.account_id == internal_plaid_account.plaid_id }
-            securities = fetched_investments.securities
-
-            internal_plaid_account.sync_investments!(transactions:, holdings:, securities:)
-          end
-        end
-      end
-
-      fetched_liabilities = safe_fetch_plaid_data(:get_item_liabilities)
-      data[:liabilities] = fetched_liabilities || []
-
-      if fetched_liabilities
-        transaction do
-          internal_plaid_accounts.each do |internal_plaid_account|
-            credit = fetched_liabilities.credit&.find { |l| l.account_id == internal_plaid_account.plaid_id }
-            mortgage = fetched_liabilities.mortgage&.find { |l| l.account_id == internal_plaid_account.plaid_id }
-            student = fetched_liabilities.student&.find { |l| l.account_id == internal_plaid_account.plaid_id }
-
-            internal_plaid_account.sync_credit_data!(credit) if credit
-            internal_plaid_account.sync_mortgage_data!(mortgage) if mortgage
-            internal_plaid_account.sync_student_loan_data!(student) if student
-          end
-        end
-      end
-
-      data
-    end
-
-    def safe_fetch_plaid_data(method)
-      begin
-        plaid_provider.send(method, self)
-      rescue Plaid::ApiError => e
-        Rails.logger.warn("Error fetching #{method} for item #{id}: #{e.message}")
-        nil
-      end
-    end
-
     def remove_plaid_item
       plaid_provider.remove_item(access_token)
-    rescue StandardError => e
-      Rails.logger.warn("Failed to remove Plaid item #{id}: #{e.message}")
-    end
+    rescue Plaid::ApiError => e
+      json_response = JSON.parse(e.response_body)
 
-    def handle_plaid_error(error)
-      error_body = JSON.parse(error.response_body)
-
-      if error_body["error_code"] == "ITEM_LOGIN_REQUIRED"
-        update!(status: :requires_update)
+      # If the item is not found, that means it was already deleted by the user on their
+      # Plaid portal OR by Plaid support.  Either way, we're not being billed, so continue
+      # with the deletion of our internal record.
+      unless json_response["error_code"] == "ITEM_NOT_FOUND"
+        raise e
       end
     end
 
-    class PlaidConnectionLostError < StandardError; end
+    # Plaid returns mutually exclusive arrays here.  If the item has made a request for a product,
+    # it is put in the billed_products array.  If it is supported, but not yet used, it goes in the
+    # available_products array.
+    def supported_products
+      available_products + billed_products
+    end
 end

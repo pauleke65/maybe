@@ -1,5 +1,6 @@
 class UsersController < ApplicationController
   before_action :set_user
+  before_action :ensure_admin, only: :reset
 
   def update
     @user = Current.user
@@ -16,11 +17,27 @@ class UsersController < ApplicationController
         redirect_to settings_profile_path, alert: error_message
       end
     else
+      was_ai_enabled = @user.ai_enabled
       @user.update!(user_params.except(:redirect_to, :delete_profile_image))
       @user.profile_image.purge if should_purge_profile_image?
 
-      handle_redirect(t(".success"))
+      # Add a special notice if AI was just enabled
+      notice = if !was_ai_enabled && @user.ai_enabled
+        "AI Assistant has been enabled successfully."
+      else
+        t(".success")
+      end
+
+      respond_to do |format|
+        format.html { handle_redirect(notice) }
+        format.json { head :ok }
+      end
     end
+  end
+
+  def reset
+    FamilyResetJob.perform_later(Current.family)
+    redirect_to settings_profile_path, notice: t(".success")
   end
 
   def destroy
@@ -32,6 +49,11 @@ class UsersController < ApplicationController
     end
   end
 
+  def rule_prompt_settings
+    @user.update!(rule_prompt_settings_params)
+    redirect_back_or_to settings_profile_path
+  end
+
   private
     def handle_redirect(notice)
       case user_params[:redirect_to]
@@ -41,6 +63,10 @@ class UsersController < ApplicationController
         redirect_to root_path
       when "preferences"
         redirect_to settings_preferences_path, notice: notice
+      when "goals"
+        redirect_to goals_onboarding_path
+      when "trial"
+        redirect_to trial_onboarding_path
       else
         redirect_to settings_profile_path, notice: notice
       end
@@ -55,14 +81,24 @@ class UsersController < ApplicationController
       user_params[:email].present? && user_params[:email] != @user.email
     end
 
+    def rule_prompt_settings_params
+      params.require(:user).permit(:rule_prompt_dismissed_at, :rule_prompts_disabled)
+    end
+
     def user_params
       params.require(:user).permit(
         :first_name, :last_name, :email, :profile_image, :redirect_to, :delete_profile_image, :onboarded_at,
-        family_attributes: [ :name, :currency, :country, :locale, :date_format, :timezone, :id, :data_enrichment_enabled ]
+        :show_sidebar, :default_period, :show_ai_sidebar, :ai_enabled, :theme, :set_onboarding_preferences_at, :set_onboarding_goals_at,
+        family_attributes: [ :name, :currency, :country, :locale, :date_format, :timezone, :id ],
+        goals: []
       )
     end
 
     def set_user
       @user = Current.user
+    end
+
+    def ensure_admin
+      redirect_to settings_profile_path, alert: I18n.t("users.reset.unauthorized") unless Current.user.admin?
     end
 end

@@ -1,17 +1,19 @@
 module SettingsHelper
   SETTINGS_ORDER = [
-    { name: I18n.t("settings.nav.profile_label"), path: :settings_profile_path },
-    { name: I18n.t("settings.nav.preferences_label"), path: :settings_preferences_path },
-    { name: I18n.t("settings.nav.self_hosting_label"), path: :settings_hosting_path, condition: :self_hosted? },
-    { name: I18n.t("settings.nav.security_label"), path: :settings_security_path },
-    { name: I18n.t("settings.nav.billing_label"), path: :settings_billing_path },
-    { name: I18n.t("settings.nav.accounts_label"), path: :accounts_path },
-    { name: I18n.t("settings.nav.imports_label"), path: :imports_path },
-    { name: I18n.t("settings.nav.tags_label"), path: :tags_path },
-    { name: I18n.t("settings.nav.categories_label"), path: :categories_path },
-    { name: I18n.t("settings.nav.merchants_label"), path: :merchants_path },
-    { name: I18n.t("settings.nav.whats_new_label"), path: :changelog_path },
-    { name: I18n.t("settings.nav.feedback_label"), path: :feedback_path }
+    { name: "Account", path: :settings_profile_path },
+    { name: "Preferences", path: :settings_preferences_path },
+    { name: "Security", path: :settings_security_path },
+    { name: "Self hosting", path: :settings_hosting_path, condition: :self_hosted? },
+    { name: "API Key", path: :settings_api_key_path },
+    { name: "Billing", path: :settings_billing_path, condition: :not_self_hosted? },
+    { name: "Accounts", path: :accounts_path },
+    { name: "Imports", path: :imports_path },
+    { name: "Tags", path: :tags_path },
+    { name: "Categories", path: :categories_path },
+    { name: "Rules", path: :rules_path },
+    { name: "Merchants", path: :family_merchants_path },
+    { name: "What's new", path: :changelog_path },
+    { name: "Feedback", path: :feedback_path }
   ]
 
   def adjacent_setting(current_path, offset)
@@ -24,7 +26,7 @@ module SettingsHelper
 
     adjacent = visible_settings[adjacent_index]
 
-    render partial: "settings/nav_link_large", locals: {
+    render partial: "settings/settings_nav_link_large", locals: {
       path: send(adjacent[:path]),
       direction: offset > 0 ? "next" : "previous",
       title: adjacent[:name]
@@ -40,9 +42,24 @@ module SettingsHelper
     previous_setting = adjacent_setting(request.path, -1)
     next_setting = adjacent_setting(request.path, 1)
 
-    content_tag :div, class: "flex justify-between gap-4" do
+    content_tag :div, class: "hidden md:flex flex-row justify-between gap-4" do
       concat(previous_setting)
       concat(next_setting)
     end
   end
+
+  def settings_nav_footer_mobile
+    previous_setting = adjacent_setting(request.path, -1)
+    next_setting = adjacent_setting(request.path, 1)
+
+    content_tag :div, class: "md:hidden flex flex-col gap-4" do
+      concat(previous_setting)
+      concat(next_setting)
+    end
+  end
+
+  private
+    def not_self_hosted?
+      !self_hosted?
+    end
 end

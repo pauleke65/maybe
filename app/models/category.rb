@@ -1,20 +1,20 @@
 class Category < ApplicationRecord
-  has_many :transactions, dependent: :nullify, class_name: "Account::Transaction"
+  has_many :transactions, dependent: :nullify, class_name: "Transaction"
   has_many :import_mappings, as: :mappable, dependent: :destroy, class_name: "Import::Mapping"
 
   belongs_to :family
 
   has_many :budget_categories, dependent: :destroy
-  has_many :subcategories, class_name: "Category", foreign_key: :parent_id
+  has_many :subcategories, class_name: "Category", foreign_key: :parent_id, dependent: :nullify
   belongs_to :parent, class_name: "Category", optional: true
 
-  validates :name, :color, :family, presence: true
+  validates :name, :color, :lucide_icon, :family, presence: true
   validates :name, uniqueness: { scope: :family_id }
 
   validate :category_level_limit
   validate :nested_category_matches_parent_classification
 
-  before_create :inherit_color_from_parent
+  before_save :inherit_color_from_parent
 
   scope :alphabetically, -> { order(:name) }
   scope :roots, -> { where(parent_id: nil) }
@@ -50,11 +50,11 @@ class Category < ApplicationRecord
       %w[bus circle-dollar-sign ambulance apple award baby battery lightbulb bed-single beer bluetooth book briefcase building credit-card camera utensils cooking-pot cookie dices drama dog drill drum dumbbell gamepad-2 graduation-cap house hand-helping ice-cream-cone phone piggy-bank pill pizza printer puzzle ribbon shopping-cart shield-plus ticket trees]
     end
 
-    def bootstrap_defaults
-      default_categories.each do |name, color, icon|
+    def bootstrap!
+      default_categories.each do |name, color, icon, classification|
         find_or_create_by!(name: name) do |category|
           category.color = color
-          category.classification = "income" if name == "Income"
+          category.classification = classification
           category.lucide_icon = icon
         end
       end
@@ -71,18 +71,20 @@ class Category < ApplicationRecord
     private
       def default_categories
         [
-          [ "Income", "#e99537", "circle-dollar-sign" ],
-          [ "Housing", "#6471eb", "house" ],
-          [ "Entertainment", "#df4e92", "drama" ],
-          [ "Food & Drink", "#eb5429", "utensils" ],
-          [ "Shopping", "#e99537", "shopping-cart" ],
-          [ "Healthcare", "#4da568", "pill" ],
-          [ "Insurance", "#6471eb", "piggy-bank" ],
-          [ "Utilities", "#db5a54", "lightbulb" ],
-          [ "Transportation", "#df4e92", "bus" ],
-          [ "Education", "#eb5429", "book" ],
-          [ "Gifts & Donations", "#61c9ea", "hand-helping" ],
-          [ "Subscriptions", "#805dee", "credit-card" ]
+          [ "Income", "#e99537", "circle-dollar-sign", "income" ],
+          [ "Loan Payments", "#6471eb", "credit-card", "expense" ],
+          [ "Fees", "#6471eb", "credit-card", "expense" ],
+          [ "Entertainment", "#df4e92", "drama", "expense" ],
+          [ "Food & Drink", "#eb5429", "utensils", "expense" ],
+          [ "Shopping", "#e99537", "shopping-cart", "expense" ],
+          [ "Home Improvement", "#6471eb", "house", "expense" ],
+          [ "Healthcare", "#4da568", "pill", "expense" ],
+          [ "Personal Care", "#4da568", "pill", "expense" ],
+          [ "Services", "#4da568", "briefcase", "expense" ],
+          [ "Gifts & Donations", "#61c9ea", "hand-helping", "expense" ],
+          [ "Transportation", "#df4e92", "bus", "expense" ],
+          [ "Travel", "#df4e92", "plane", "expense" ],
+          [ "Rent & Utilities", "#db5a54", "lightbulb", "expense" ]
         ]
       end
   end
@@ -108,30 +110,6 @@ class Category < ApplicationRecord
     parent.present?
   end
 
-  def avg_monthly_total
-    family.category_stats.avg_monthly_total_for(self)
-  end
-
-  def median_monthly_total
-    family.category_stats.median_monthly_total_for(self)
-  end
-
-  def month_total(date: Date.current)
-    family.category_stats.month_total_for(self, date: date)
-  end
-
-  def avg_monthly_total_money
-    Money.new(avg_monthly_total, family.currency)
-  end
-
-  def median_monthly_total_money
-    Money.new(median_monthly_total, family.currency)
-  end
-
-  def month_total_money(date: Date.current)
-    Money.new(month_total(date: date), family.currency)
-  end
-
   private
     def category_level_limit
       if (subcategory? && parent.subcategory?) || (parent? && subcategory?)
@@ -143,5 +121,9 @@ class Category < ApplicationRecord
       if subcategory? && parent.classification != classification
         errors.add(:parent, "must have the same classification as its parent")
       end
+    end
+
+    def monetizable_currency
+      family.currency
     end
 end

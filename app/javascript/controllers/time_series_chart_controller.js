@@ -1,13 +1,14 @@
 import { Controller } from "@hotwired/stimulus";
 import * as d3 from "d3";
 
+const parseLocalDate = d3.timeParse("%Y-%m-%d");
+
 export default class extends Controller {
   static values = {
     data: Object,
     strokeWidth: { type: Number, default: 2 },
     useLabels: { type: Boolean, default: true },
     useTooltip: { type: Boolean, default: true },
-    usePercentSign: Boolean,
   };
 
   _d3SvgMemo = null;
@@ -16,15 +17,18 @@ export default class extends Controller {
   _d3InitialContainerWidth = 0;
   _d3InitialContainerHeight = 0;
   _normalDataPoints = [];
+  _resizeObserver = null;
 
   connect() {
     this._install();
     document.addEventListener("turbo:load", this._reinstall);
+    this._setupResizeObserver();
   }
 
   disconnect() {
     this._teardown();
     document.removeEventListener("turbo:load", this._reinstall);
+    this._resizeObserver?.disconnect();
   }
 
   _reinstall = () => {
@@ -49,10 +53,10 @@ export default class extends Controller {
 
   _normalizeDataPoints() {
     this._normalDataPoints = (this.dataValue.values || []).map((d) => ({
-      ...d,
-      date: new Date(`${d.date}T00:00:00Z`),
-      value: d.value.amount ? +d.value.amount : +d.value,
-      currency: d.value.currency,
+      date: parseLocalDate(d.date),
+      date_formatted: d.date_formatted,
+      value: d.value,
+      trend: d.trend,
     }));
   }
 
@@ -94,7 +98,8 @@ export default class extends Controller {
       .attr("cx", this._d3InitialContainerWidth / 2)
       .attr("cy", this._d3InitialContainerHeight / 2)
       .attr("r", 4)
-      .style("fill", "var(--color-gray-400)");
+      .attr("class", "fg-subdued")
+      .style("fill", "currentColor");
   }
 
   _drawChart() {
@@ -134,35 +139,48 @@ export default class extends Controller {
       .attr("x1", this._d3XScale.range()[0])
       .attr("x2", this._d3XScale.range()[1]);
 
+    // First stop - solid trend color
     gradient
       .append("stop")
       .attr("class", "start-color")
       .attr("offset", "0%")
-      .attr("stop-color", this._trendColor);
+      .attr("stop-color", this.dataValue.trend.color);
 
+    // Second stop - trend color right before split
     gradient
       .append("stop")
-      .attr("class", "middle-color")
+      .attr("class", "split-before")
       .attr("offset", "100%")
-      .attr("stop-color", this._trendColor);
+      .attr("stop-color", this.dataValue.trend.color);
 
+    // Third stop - gray color right after split
+    gradient
+      .append("stop")
+      .attr("class", "split-after")
+      .attr("offset", "100%")
+      .attr("stop-color", "var(--color-gray-400)");
+
+    // Fourth stop - solid gray to end
     gradient
       .append("stop")
       .attr("class", "end-color")
       .attr("offset", "100%")
-      .attr("stop-color", "var(--color-gray-300)");
+      .attr("stop-color", "var(--color-gray-400)");
   }
 
   _setTrendlineSplitAt(percent) {
+    const position = percent * 100;
+
+    // Update both stops at the split point
     this._d3Svg
       .select(`#${this.element.id}-split-gradient`)
-      .select(".middle-color")
-      .attr("offset", `${percent * 100}%`);
+      .select(".split-before")
+      .attr("offset", `${position}%`);
 
     this._d3Svg
       .select(`#${this.element.id}-split-gradient`)
-      .select(".end-color")
-      .attr("offset", `${percent * 100}%`);
+      .select(".split-after")
+      .attr("offset", `${position}%`);
 
     this._d3Svg
       .select(`#${this.element.id}-trendline-gradient-rect`)
@@ -182,7 +200,7 @@ export default class extends Controller {
             this._normalDataPoints[this._normalDataPoints.length - 1].date,
           ])
           .tickSize(0)
-          .tickFormat(d3.utcFormat("%d %b %Y")),
+          .tickFormat(d3.timeFormat("%b %d, %Y")),
       )
       .select(".domain")
       .remove();
@@ -190,7 +208,7 @@ export default class extends Controller {
     // Style ticks
     this._d3Group
       .selectAll(".tick text")
-      .style("fill", "var(--color-gray-500)")
+      .attr("class", "fg-gray")
       .style("font-size", "12px")
       .style("font-weight", "500")
       .attr("text-anchor", "middle")
@@ -212,7 +230,7 @@ export default class extends Controller {
       .attr("x2", 0)
       .attr(
         "y1",
-        this._d3YScale(d3.max(this._normalDataPoints, (d) => d.value)),
+        this._d3YScale(d3.max(this._normalDataPoints, this._getDatumValue)),
       )
       .attr("y2", this._d3ContainerHeight);
 
@@ -240,7 +258,7 @@ export default class extends Controller {
           .area()
           .x((d) => this._d3XScale(d.date))
           .y0(this._d3ContainerHeight)
-          .y1((d) => this._d3YScale(d.value)),
+          .y1((d) => this._d3YScale(this._getDatumValue(d))),
       );
 
     // Apply the gradient + clip path
@@ -257,14 +275,10 @@ export default class extends Controller {
     this._d3Tooltip = d3
       .select(`#${this.element.id}`)
       .append("div")
-      .style("position", "absolute")
-      .style("padding", "8px")
-      .style("font", "14px Inter, sans-serif")
-      .style("background", "var(--color-white)")
-      .style("border", "1px solid var(--color-alpha-black-100)")
-      .style("border-radius", "10px")
-      .style("pointer-events", "none")
-      .style("opacity", 0); // Starts as hidden
+      .attr(
+        "class",
+        "bg-container text-sm font-sans absolute p-2 border border-secondary rounded-lg pointer-events-none opacity-0",
+      );
   }
 
   _trackMouseForShowingTooltip() {
@@ -272,6 +286,7 @@ export default class extends Controller {
 
     this._d3Group
       .append("rect")
+      .attr("class", "bg-container")
       .attr("width", this._d3ContainerWidth)
       .attr("height", this._d3ContainerHeight)
       .attr("fill", "none")
@@ -307,12 +322,12 @@ export default class extends Controller {
         // Guideline
         this._d3Group
           .append("line")
-          .attr("class", "guideline")
+          .attr("class", "guideline fg-subdued")
           .attr("x1", this._d3XScale(d.date))
           .attr("y1", 0)
           .attr("x2", this._d3XScale(d.date))
           .attr("y2", this._d3ContainerHeight)
-          .attr("stroke", "var(--color-gray-300)")
+          .attr("stroke", "currentColor")
           .attr("stroke-dasharray", "4, 4");
 
         // Big circle
@@ -320,8 +335,8 @@ export default class extends Controller {
           .append("circle")
           .attr("class", "data-point-circle")
           .attr("cx", this._d3XScale(d.date))
-          .attr("cy", this._d3YScale(d.value))
-          .attr("r", 8)
+          .attr("cy", this._d3YScale(this._getDatumValue(d)))
+          .attr("r", 10)
           .attr("fill", this._trendColor)
           .attr("fill-opacity", "0.1")
           .attr("pointer-events", "none");
@@ -331,8 +346,8 @@ export default class extends Controller {
           .append("circle")
           .attr("class", "data-point-circle")
           .attr("cx", this._d3XScale(d.date))
-          .attr("cy", this._d3YScale(d.value))
-          .attr("r", 3)
+          .attr("cy", this._d3YScale(this._getDatumValue(d)))
+          .attr("r", 5)
           .attr("fill", this._trendColor)
           .attr("pointer-events", "none");
 
@@ -352,7 +367,6 @@ export default class extends Controller {
           this._d3Group.selectAll(".guideline").remove();
           this._d3Group.selectAll(".data-point-circle").remove();
           this._d3Tooltip.style("opacity", 0);
-
           this._setTrendlineSplitAt(1);
         }
       });
@@ -361,34 +375,22 @@ export default class extends Controller {
   _tooltipTemplate(datum) {
     return `
       <div style="margin-bottom: 4px; color: var(--color-gray-500);">
-        ${d3.utcFormat("%b %d, %Y")(datum.date)}
+        ${datum.date_formatted}
       </div>
-
-      <div style="display: flex; align-items: center; gap: 16px;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <svg width="10" height="10">
-            <circle
-              cx="5"
-              cy="5"
-              r="4"
-              stroke="${this._tooltipTrendColor(datum)}"
-              fill="transparent"
-              stroke-width="1"></circle>
-          </svg>
-
-          ${this._tooltipValue(datum)}${this.usePercentSignValue ? "%" : ""}
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 text-primary">
+          <div class="flex items-center justify-center h-4 w-4">
+            ${this._getTrendIcon(datum)}
+          </div>
+          ${this._extractFormattedValue(datum.trend.current)}
         </div>
 
         ${
-          this.usePercentSignValue ||
-          datum.trend.value === 0 ||
-          datum.trend.value.amount === 0
-            ? `
-          <span style="width: 80px;"></span>
-        `
+          datum.trend.value === 0
+            ? `<span class="w-20"></span>`
             : `
-          <span style="color: ${this._tooltipTrendColor(datum)};">
-            ${this._tooltipChange(datum)} (${datum.trend.percent}%)
+          <span style="color: ${datum.trend.color};">
+            ${this._extractFormattedValue(datum.trend.value)} (${datum.trend.percent_formatted})
           </span>
         `
         }
@@ -396,55 +398,40 @@ export default class extends Controller {
     `;
   }
 
-  _tooltipTrendColor(datum) {
-    return {
-      up:
-        datum.trend.favorable_direction === "up"
-          ? "var(--color-success)"
-          : "var(--color-destructive)",
-      down:
-        datum.trend.favorable_direction === "down"
-          ? "var(--color-success)"
-          : "var(--color-destructive)",
-      flat: "var(--color-gray-500)",
-    }[datum.trend.direction];
-  }
+  _getTrendIcon(datum) {
+    const isIncrease =
+      Number(datum.trend.previous.amount) < Number(datum.trend.current.amount);
+    const isDecrease =
+      Number(datum.trend.previous.amount) > Number(datum.trend.current.amount);
 
-  _tooltipValue(datum) {
-    if (datum.currency) {
-      return this._currencyValue(datum);
+    if (isIncrease) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${datum.trend.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-right-icon lucide-arrow-up-right"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>`;
     }
-    return datum.value;
-  }
 
-  _tooltipChange(datum) {
-    if (datum.currency) {
-      return this._currencyChange(datum);
+    if (isDecrease) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${datum.trend.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-down-right-icon lucide-arrow-down-right"><path d="m7 7 10 10"/><path d="M17 7v10H7"/></svg>`;
     }
-    return this._decimalChange(datum);
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${datum.trend.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-minus-icon lucide-minus"><path d="M5 12h14"/></svg>`;
   }
 
-  _currencyValue(datum) {
-    return Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: datum.currency,
-    }).format(datum.value);
-  }
+  _getDatumValue = (datum) => {
+    return this._extractNumericValue(datum.value);
+  };
 
-  _currencyChange(datum) {
-    return Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: datum.currency,
-      signDisplay: "always",
-    }).format(datum.trend.value.amount);
-  }
+  _extractNumericValue = (numeric) => {
+    if (typeof numeric === "object" && "amount" in numeric) {
+      return Number(numeric.amount);
+    }
+    return Number(numeric);
+  };
 
-  _decimalChange(datum) {
-    return Intl.NumberFormat(undefined, {
-      style: "decimal",
-      signDisplay: "always",
-    }).format(datum.trend.value);
-  }
+  _extractFormattedValue = (numeric) => {
+    if (typeof numeric === "object" && "formatted" in numeric) {
+      return numeric.formatted;
+    }
+    return numeric;
+  };
 
   _createMainSvg() {
     return this._d3Container
@@ -481,7 +468,7 @@ export default class extends Controller {
 
   get _margin() {
     if (this.useLabelsValue) {
-      return { top: 20, right: 0, bottom: 30, left: 0 };
+      return { top: 20, right: 0, bottom: 10, left: 0 };
     }
     return { top: 0, right: 0, bottom: 0, left: 0 };
   }
@@ -503,28 +490,14 @@ export default class extends Controller {
   }
 
   get _trendColor() {
-    if (this._trendDirection === "flat") {
-      return "var(--color-gray-500)";
-    }
-    if (this._trendDirection === this._favorableDirection) {
-      return "var(--color-green-500)";
-    }
-    return "var(--color-destructive)";
-  }
-
-  get _trendDirection() {
-    return this.dataValue.trend.direction;
-  }
-
-  get _favorableDirection() {
-    return this.dataValue.trend.favorable_direction;
+    return this.dataValue.trend.color;
   }
 
   get _d3Line() {
     return d3
       .line()
       .x((d) => this._d3XScale(d.date))
-      .y((d) => this._d3YScale(d.value));
+      .y((d) => this._d3YScale(this._getDatumValue(d)));
   }
 
   get _d3XScale() {
@@ -535,14 +508,63 @@ export default class extends Controller {
   }
 
   get _d3YScale() {
-    const reductionPercent = this.useLabelsValue ? 0.3 : 0.05;
-    const dataMin = d3.min(this._normalDataPoints, (d) => d.value);
-    const dataMax = d3.max(this._normalDataPoints, (d) => d.value);
-    const padding = (dataMax - dataMin) * reductionPercent;
+    const dataMin = d3.min(this._normalDataPoints, this._getDatumValue);
+    const dataMax = d3.max(this._normalDataPoints, this._getDatumValue);
+
+    // Handle edge case where all values are the same
+    if (dataMin === dataMax) {
+      const padding = dataMax === 0 ? 100 : Math.abs(dataMax) * 0.5;
+      return d3
+        .scaleLinear()
+        .rangeRound([this._d3ContainerHeight, 0])
+        .domain([dataMin - padding, dataMax + padding]);
+    }
+
+    const dataRange = dataMax - dataMin;
+    const avgValue = (dataMax + dataMin) / 2;
+
+    // Calculate relative change as a percentage
+    const relativeChange = avgValue !== 0 ? dataRange / Math.abs(avgValue) : 1;
+
+    // Dynamic baseline calculation
+    let yMin;
+    let yMax;
+
+    // For small relative changes (< 10%), use a tighter scale
+    if (relativeChange < 0.1 && dataMin > 0) {
+      // Start axis at a percentage below the minimum, not at 0
+      const baselinePadding = dataRange * 2; // Show 2x the data range below min
+      yMin = Math.max(0, dataMin - baselinePadding);
+      yMax = dataMax + dataRange * 0.5; // Add 50% padding above
+    } else {
+      // For larger changes or when data crosses zero, use more context
+      // Always include 0 when data is negative or close to 0
+      if (dataMin < 0 || (dataMin >= 0 && dataMin < avgValue * 0.1)) {
+        yMin = Math.min(0, dataMin * 1.1);
+      } else {
+        // Otherwise use dynamic baseline
+        yMin = dataMin - dataRange * 0.3;
+      }
+      yMax = dataMax + dataRange * 0.1;
+    }
+
+    // Adjust padding for labels if needed
+    if (this.useLabelsValue) {
+      const extraPadding = (yMax - yMin) * 0.1;
+      yMin -= extraPadding;
+      yMax += extraPadding;
+    }
 
     return d3
       .scaleLinear()
       .rangeRound([this._d3ContainerHeight, 0])
-      .domain([dataMin - padding, dataMax + padding]);
+      .domain([yMin, yMax]);
+  }
+
+  _setupResizeObserver() {
+    this._resizeObserver = new ResizeObserver(() => {
+      this._reinstall();
+    });
+    this._resizeObserver.observe(this.element);
   }
 }

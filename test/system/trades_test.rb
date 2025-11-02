@@ -6,20 +6,14 @@ class TradesTest < ApplicationSystemTestCase
   setup do
     sign_in @user = users(:family_admin)
 
+    @user.update!(show_sidebar: false, show_ai_sidebar: false)
+
     @account = accounts(:investment)
 
     visit_account_portfolio
 
-    Security.stubs(:search).returns([
-      Security.new(
-        ticker: "AAPL",
-        name: "Apple Inc.",
-        logo_url: "https://logo.synthfinance.com/ticker/AAPL",
-        exchange_acronym: "NASDAQ",
-        exchange_mic: "XNAS",
-        country_code: "US"
-      )
-    ])
+    # Disable provider to focus on form testing
+    Security.stubs(:provider).returns(nil)
   end
 
   test "can create buy transaction" do
@@ -28,44 +22,41 @@ class TradesTest < ApplicationSystemTestCase
     open_new_trade_modal
 
     fill_in "Ticker symbol", with: "AAPL"
-    select_combobox_option("Apple")
     fill_in "Date", with: Date.current
     fill_in "Quantity", with: shares_qty
-    fill_in "account_entry[price]", with: 214.23
+    fill_in "model[price]", with: 214.23
 
     click_button "Add transaction"
 
-    visit_account_trades
+    visit_trades
 
     within_trades do
-      assert_text "Purchase 10 shares of AAPL"
-      assert_text "Buy #{shares_qty} shares of AAPL"
+      assert_text "Buy #{shares_qty}.0 shares of AAPL"
     end
   end
 
   test "can create sell transaction" do
+    qty = 10
     aapl = @account.holdings.find { |h| h.security.ticker == "AAPL" }
 
     open_new_trade_modal
 
     select "Sell", from: "Type"
-    fill_in "Ticker symbol", with: aapl.ticker
-    select_combobox_option(aapl.security.name)
+    fill_in "Ticker symbol", with: "AAPL"
     fill_in "Date", with: Date.current
-    fill_in "Quantity", with: aapl.qty
-    fill_in "account_entry[price]", with: 215.33
+    fill_in "Quantity", with: qty
+    fill_in "model[price]", with: 215.33
 
     click_button "Add transaction"
 
-    visit_account_trades
+    visit_trades
 
     within_trades do
-      assert_text "Sell #{aapl.qty.round} shares of AAPL"
+      assert_text "Sell #{qty}.0 shares of AAPL"
     end
   end
 
   private
-
     def open_new_trade_modal
       click_on "New transaction"
     end
@@ -74,17 +65,11 @@ class TradesTest < ApplicationSystemTestCase
       within "#" + dom_id(@account, "entries"), &block
     end
 
-    def visit_account_trades
+    def visit_trades
       visit account_path(@account, tab: "activity")
     end
 
     def visit_account_portfolio
       visit account_path(@account, tab: "holdings")
-    end
-
-    def select_combobox_option(text)
-      within "#account_entry_ticker-hw-listbox" do
-        find("li", text: text).click
-      end
     end
 end

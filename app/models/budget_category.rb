@@ -6,7 +6,7 @@ class BudgetCategory < ApplicationRecord
 
   validates :budget_id, uniqueness: { scope: :category_id }
 
-  monetize :budgeted_spending, :actual_spending, :available_to_spend
+  monetize :budgeted_spending, :available_to_spend, :avg_monthly_expense, :median_monthly_expense, :actual_spending
 
   class Group
     attr_reader :budget_category, :budget_subcategories
@@ -45,12 +45,24 @@ class BudgetCategory < ApplicationRecord
     super || budget.family.categories.uncategorized
   end
 
-  def subcategory?
-    category.parent_id.present?
+  def name
+    category.name
   end
 
   def actual_spending
-    category.month_total(date: budget.start_date)
+    budget.budget_category_actual_spending(self)
+  end
+
+  def avg_monthly_expense
+    budget.category_avg_monthly_expense(category)
+  end
+
+  def median_monthly_expense
+    budget.category_median_monthly_expense(category)
+  end
+
+  def subcategory?
+    category.parent_id.present?
   end
 
   def available_to_spend
@@ -67,14 +79,14 @@ class BudgetCategory < ApplicationRecord
     unused_segment_id = "unused"
     overage_segment_id = "overage"
 
-    return [ { color: "#F0F0F0", amount: 1, id: unused_segment_id } ] unless actual_spending > 0
+    return [ { color: "var(--budget-unallocated-fill)", amount: 1, id: unused_segment_id } ] unless actual_spending > 0
 
     segments = [ { color: category.color, amount: actual_spending, id: id } ]
 
     if available_to_spend.negative?
-      segments.push({ color: "#EF4444", amount: available_to_spend.abs, id: overage_segment_id })
+      segments.push({ color: "var(--color-destructive)", amount: available_to_spend.abs, id: overage_segment_id })
     else
-      segments.push({ color: "#F0F0F0", amount: available_to_spend, id: unused_segment_id })
+      segments.push({ color: "var(--budget-unallocated-fill)", amount: available_to_spend, id: unused_segment_id })
     end
 
     segments

@@ -2,15 +2,19 @@
 http_interactions:
 - request:
     method: get
-    uri: https://api.synthfinance.com/rates/historical?date=2024-08-01&from=USD&to=MXN
+    uri: https://api.synthfinance.com/rates/historical?date=2024-01-01&from=USD&to=GBP
     body:
       encoding: US-ASCII
       string: ''
     headers:
-      User-Agent:
-        - Faraday v2.10.0
       Authorization:
       - Bearer <SYNTH_API_KEY>
+      X-Source:
+      - maybe_app
+      X-Source-Type:
+      - managed
+      User-Agent:
+      - Faraday v2.13.1
       Accept-Encoding:
       - gzip;q=1.0,deflate;q=0.6,identity;q=0.3
       Accept:
@@ -21,29 +25,25 @@ http_interactions:
       message: OK
     headers:
       Date:
-        - Thu, 01 Aug 2024 17:20:28 GMT
+      - Fri, 16 May 2025 13:01:38 GMT
       Content-Type:
       - application/json; charset=utf-8
       Transfer-Encoding:
-        - chunked
+      - chunked
       Connection:
       - keep-alive
-      Cf-Ray:
-        - 8ac77fbcc9d013ae-CMH
-      Cf-Cache-Status:
-      - DYNAMIC
       Cache-Control:
       - max-age=0, private, must-revalidate
       Etag:
-        - W/"668c8ac287a5ff6d6a705c35c69823b1"
+      - W/"0c93a67d0c68e6f206e2954a41aa2933"
+      Referrer-Policy:
+      - strict-origin-when-cross-origin
+      Rndr-Id:
+      - 146e30b2-e03b-47e3
       Strict-Transport-Security:
       - max-age=63072000; includeSubDomains
       Vary:
       - Accept-Encoding
-      Referrer-Policy:
-      - strict-origin-when-cross-origin
-      Rndr-Id:
-        - ff56c2fe-6252-4b2c
       X-Content-Type-Options:
       - nosniff
       X-Frame-Options:
@@ -53,17 +53,29 @@ http_interactions:
       X-Render-Origin-Server:
       - Render
       X-Request-Id:
-        - 61992b01-969b-4af5-8119-9b17e385da07
+      - 3cf7ade1-8066-422a-97c7-5f8b99e24296
       X-Runtime:
-        - '0.369358'
+      - '0.024284'
       X-Xss-Protection:
       - '0'
+      Cf-Cache-Status:
+      - DYNAMIC
+      Report-To:
+      - '{"endpoints":[{"url":"https:\/\/a.nel.cloudflare.com\/report\/v4?s=ih8sEFqAOWyINqAEtKGKPKO2lr1qAYSVeipyB5F8g2umPODXvCD4hN3G6wTTs2Q7H8CDWsqiOlYkmVvmr%2BWvl2ojOtBwO25Ahk9TbhlcgRO9nT6mEIXOSdVXJpzpRn5Ov%2FMGigpQ"}],"group":"cf-nel","max_age":604800}'
+      Nel:
+      - '{"success_fraction":0,"report_to":"cf-nel","max_age":604800}'
+      Speculation-Rules:
+      - '"/cdn-cgi/speculation"'
       Server:
       - cloudflare
+      Cf-Ray:
+      - 940b109b5df1a3d7-ORD
       Alt-Svc:
       - h3=":443"; ma=86400
+      Server-Timing:
+      - cfL4;desc="?proto=TCP&rtt=25865&min_rtt=25683&rtt_var=9996&sent=4&recv=6&lost=0&retrans=0&sent_bytes=2827&recv_bytes=922&delivery_rate=106690&cwnd=219&unsent_bytes=0&cid=e48ae188d1f86721&ts=190&x=0"
     body:
       encoding: ASCII-8BIT
-      string: '{"data":{"date":"2024-08-01","source":"USD","rates":{"MXN":18.645877}},"meta":{"total_records":1,"credits_used":1,"credits_remaining":248999}}'
-  recorded_at: Thu, 01 Aug 2024 17:20:28 GMT
-recorded_with: VCR 6.2.0
+      string: '{"data":{"date":"2024-01-01","source":"USD","rates":{"GBP":0.785476}},"meta":{"total_records":1,"credits_used":1,"credits_remaining":249734,"date":"2024-01-01"}}'
+  recorded_at: Fri, 16 May 2025 13:01:38 GMT
+recorded_with: VCR 6.3.1

@@ -46,7 +46,7 @@ class Money
     if iso_code == other_iso_code
       self
     else
-      exchange_rate = store.find_rate(from: iso_code, to: other_iso_code, date: date)&.rate || fallback_rate
+      exchange_rate = store.find_or_fetch_rate(from: iso_code, to: other_iso_code, date: date)&.rate || fallback_rate
 
       raise ConversionError.new(from_currency: iso_code, to_currency: other_iso_code, date: date) unless exchange_rate
 
@@ -55,7 +55,7 @@ class Money
   end
 
   def as_json
-    { amount: amount, currency: currency.iso_code }.as_json
+    { amount: amount, currency: currency.iso_code, formatted: format }.as_json
   end
 
   def <=>(other)

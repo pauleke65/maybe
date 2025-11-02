@@ -1,10 +1,10 @@
 class TagsController < ApplicationController
-  layout :with_sidebar
-
   before_action :set_tag, only: %i[edit update destroy]
 
   def index
     @tags = Current.family.tags.alphabetically
+
+    render layout: "settings"
   end
 
   def new
@@ -32,6 +32,11 @@ class TagsController < ApplicationController
   def destroy
     @tag.destroy!
     redirect_to tags_path, notice: t(".deleted")
+  end
+
+  def destroy_all
+    Current.family.tags.destroy_all
+    redirect_back_or_to tags_path, notice: "All tags deleted"
   end
 
   private

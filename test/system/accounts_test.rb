@@ -23,15 +23,40 @@ class AccountsTest < ApplicationSystemTestCase
   end
 
   test "can create property account" do
-    assert_account_created "Property" do
-      fill_in "Year built", with: 2005
-      fill_in "Living area", with: 2250
-      fill_in "Street address", with: "123 Main St"
-      fill_in "City", with: "San Francisco"
-      fill_in "State/Province", with: "CA"
-      fill_in "ZIP/Postal code", with: "94101"
-      fill_in "Country", with: "US"
-    end
+    # Step 1: Select property type and enter basic details
+    click_link "Property"
+
+    account_name = "[system test] Property Account"
+    fill_in "Name*", with: account_name
+    select "Single Family Home", from: "Property type*"
+    fill_in "Year Built (optional)", with: 2005
+    fill_in "Area (optional)", with: 2250
+
+    click_button "Next"
+
+    # Step 2: Enter balance information
+    assert_text "Value"
+    fill_in "account[balance]", with: 500000
+    click_button "Next"
+
+    # Step 3: Enter address information
+    assert_text "Address"
+    fill_in "Address Line 1", with: "123 Main St"
+    fill_in "City", with: "San Francisco"
+    fill_in "State/Region", with: "CA"
+    fill_in "Postal Code", with: "94101"
+    fill_in "Country", with: "US"
+
+    click_button "Save"
+
+    # Verify account was created and is now active
+    assert_text account_name
+
+    created_account = Account.order(:created_at).last
+    assert_equal "active", created_account.status
+    assert_equal 500000, created_account.balance
+    assert_equal "123 Main St", created_account.property.address.line1
+    assert_equal "San Francisco", created_account.property.address.locality
   end
 
   test "can create vehicle account" do
@@ -59,6 +84,7 @@ class AccountsTest < ApplicationSystemTestCase
 
   test "can create loan account" do
     assert_account_created "Loan" do
+      fill_in "account[accountable_attributes][initial_balance]", with: 1000
       fill_in "Interest rate", with: 5.25
       select "Fixed", from: "Rate type"
       fill_in "Term (months)", with: 360
@@ -72,11 +98,14 @@ class AccountsTest < ApplicationSystemTestCase
   private
 
     def open_new_account_modal
-      click_link "sidebar-new-account"
+      within "[data-controller='DS--tabs']" do
+        click_button "All"
+        click_link "New account"
+      end
     end
 
     def assert_account_created(accountable_type, &block)
-      click_link humanized_accountable(accountable_type)
+      click_link Accountable.from_type(accountable_type).display_name.singularize
       click_link "Enter account balance" if accountable_type.in?(%w[Depository Investment Crypto Loan CreditCard])
 
       account_name = "[system test] #{accountable_type} Account"
@@ -88,8 +117,11 @@ class AccountsTest < ApplicationSystemTestCase
 
       click_button "Create Account"
 
-      find("details", text: humanized_accountable(accountable_type)).click
-      assert_text account_name
+      within_testid("account-sidebar-tabs") do
+        click_on "All"
+        find("details", text: Accountable.from_type(accountable_type).display_name).click
+        assert_text account_name
+      end
 
       visit accounts_url
       assert_text account_name
@@ -98,8 +130,8 @@ class AccountsTest < ApplicationSystemTestCase
 
       visit account_url(created_account)
 
-      within "header" do
-        find('button[data-menu-target="button"]').click
+      within_testid("account-menu") do
+        find("button").click
         click_on "Edit"
       end
 
@@ -109,6 +141,6 @@ class AccountsTest < ApplicationSystemTestCase
     end
 
     def humanized_accountable(accountable_type)
-      accountable_type.constantize.model_name.human
+      Accountable.from_type(accountable_type).display_name.singularize
     end
 end

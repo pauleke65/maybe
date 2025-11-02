@@ -1,16 +1,18 @@
 class ImportsController < ApplicationController
-  before_action :set_import, only: %i[show publish destroy revert]
+  before_action :set_import, only: %i[show publish destroy revert apply_template]
 
   def publish
     @import.publish_later
 
     redirect_to import_path(@import), notice: "Your import has started in the background."
+  rescue Import::MaxRowCountExceededError
+    redirect_back_or_to import_path(@import), alert: "Your import exceeds the maximum row count of #{@import.max_row_count}."
   end
 
   def index
     @imports = Current.family.imports
 
-    render layout: with_sidebar
+    render layout: "settings"
   end
 
   def new
@@ -18,7 +20,12 @@ class ImportsController < ApplicationController
   end
 
   def create
-    import = Current.family.imports.create! import_params
+    account = Current.family.accounts.find_by(id: params.dig(:import, :account_id))
+    import = Current.family.imports.create!(
+      type: import_params[:type],
+      account: account,
+      date_format: Current.family.date_format,
+    )
 
     redirect_to import_upload_path(import)
   end
@@ -34,6 +41,15 @@ class ImportsController < ApplicationController
   def revert
     @import.revert_later
     redirect_to imports_path, notice: "Import is reverting in the background."
+  end
+
+  def apply_template
+    if @import.suggested_template
+      @import.apply_template!(@import.suggested_template)
+      redirect_to import_configuration_path(@import), notice: "Template applied."
+    else
+      redirect_to import_configuration_path(@import), alert: "No template found, please manually configure your import."
+    end
   end
 
   def destroy
