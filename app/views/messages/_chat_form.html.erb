@@ -7,13 +7,30 @@
                 class: "flex lg:flex-col gap-2 bg-container px-2 py-1.5 rounded-full lg:rounded-lg shadow-border-xs",
                 data: { chat_target: "form" } do |f| %>
 
-    <%# In the future, this will be a dropdown with different AI models %>
-    <%= f.hidden_field :ai_model, value: "gpt-4.1" %>
+    <% model_options = Ai::ModelCatalog.available.presence || Provider::Openai::MODELS.map do |id, name|
+         Ai::ModelCatalog::ModelOption.new(id: id, name: name, provider: :openai)
+       end %>
 
-    <%= f.text_area :content, placeholder: "Ask anything ...", value: message_hint,
-                  class: "w-full border-0 focus:ring-0 text-sm resize-none px-1 bg-transparent",
-                  data: { chat_target: "input", action: "input->chat#autoResize keydown->chat#handleInputKeyDown" },
-                  rows: 1 %>
+    <% selected_model = if chat&.persisted?
+         chat.active_ai_model
+       else
+         Ai::ModelCatalog.default_model
+       end %>
+
+    <div class="flex items-center gap-2 lg:flex-col lg:items-stretch">
+      <div class="relative shrink-0">
+        <%= f.label :ai_model, "AI model", class: "sr-only" %>
+        <%= f.select :ai_model,
+                     options_for_select(model_options.map { |option| [option.name, option.id] }, selected_model),
+                     {},
+                     class: "text-xs font-medium bg-container-inset border border-border px-2.5 py-1 rounded-full lg:rounded-md focus:outline-none focus:ring-2 focus:ring-primary" %>
+      </div>
+
+      <%= f.text_area :content, placeholder: "Ask anything ...", value: message_hint,
+                    class: "w-full border-0 focus:ring-0 text-sm resize-none px-1 bg-transparent",
+                    data: { chat_target: "input", action: "input->chat#autoResize keydown->chat#handleInputKeyDown" },
+                    rows: 1 %>
+    </div>
 
     <div class="flex items-center justify-between gap-1">
       <div class="items-center gap-1 hidden lg:flex">

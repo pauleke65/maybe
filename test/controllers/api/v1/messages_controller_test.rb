@@ -37,9 +37,11 @@ class Api::V1::MessagesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "should create message with write scope" do
+    default_model = Ai::ModelCatalog.default_model
+
     assert_difference "Message.count" do
       post "/api/v1/chats/#{@chat.id}/messages",
-        params: { content: "Test message", model: "gpt-4" },
+        params: { content: "Test message", model: default_model },
         headers: bearer_auth_header(@write_token)
     end
 
@@ -65,7 +67,7 @@ class Api::V1::MessagesControllerTest < ActionDispatch::IntegrationTest
     assistant_message = @chat.messages.create!(
       type: "AssistantMessage",
       content: "Previous response",
-      ai_model: "gpt-4"
+      ai_model: Ai::ModelCatalog.default_model
     )
 
     assert_enqueued_with(job: AssistantResponseJob) do

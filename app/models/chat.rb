@@ -72,4 +72,8 @@ class Chat < ApplicationRecord
       messages.where(type: [ "UserMessage", "AssistantMessage" ])
     end
   end
+
+  def active_ai_model
+    conversation_messages.ordered.last&.ai_model || Ai::ModelCatalog.default_model
+  end
 end

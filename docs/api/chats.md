@@ -182,9 +182,15 @@ Currently, you need to poll the chat endpoint to check for new AI responses. Loo
 
 ### Available AI Models
 
-- `gpt-4` (default)
-- `gpt-4-turbo`
-- `gpt-3.5-turbo`
+Model availability depends on which provider credentials are configured. When all providers are available, the following models
+can be selected:
+
+- `gpt-4.1` (OpenAI)
+- `openrouter/anthropic/claude-3-haiku` (OpenRouter)
+- `gemini-1.5-flash` (Google Gemini)
+
+Configure the corresponding credentials with the `OPENAI_ACCESS_TOKEN`, `OPENROUTER_API_KEY`, and `GEMINI_API_KEY` environment
+variables (or via the settings UI when self-hosting) to enable each provider.
 
 ### Tool Calls
 

@@ -28,4 +28,16 @@ class ChatTest < ActiveSupport::TestCase
       assert_equal 1, chat.messages.where(type: "UserMessage").count
     end
   end
+
+  test "active_ai_model returns last conversation model" do
+    chat = chats(:one)
+
+    assert_equal chat.conversation_messages.ordered.last.ai_model, chat.active_ai_model
+  end
+
+  test "active_ai_model falls back to default when empty" do
+    chat = Chat.new
+
+    assert_equal Ai::ModelCatalog.default_model, chat.active_ai_model
+  end
 end

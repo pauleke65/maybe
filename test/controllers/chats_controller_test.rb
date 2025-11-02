@@ -14,7 +14,7 @@ class ChatsControllerTest < ActionDispatch::IntegrationTest
 
   test "creates chat" do
     assert_difference("Chat.count") do
-      post chats_url, params: { chat: { content: "Hello", ai_model: "gpt-4.1" } }
+      post chats_url, params: { chat: { content: "Hello", ai_model: Ai::ModelCatalog.default_model } }
     end
 
     assert_redirected_to chat_path(Chat.order(created_at: :desc).first, thinking: true)

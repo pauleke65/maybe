@@ -4,14 +4,26 @@ class Provider::Openai < Provider
   # Subclass so errors caught in this provider are raised as Provider::Openai::Error
   Error = Class.new(Provider::Error)
 
-  MODELS = %w[gpt-4.1]
+  MODELS = {
+    "gpt-4.1" => "GPT-4.1 (OpenAI)"
+  }.freeze
 
   def initialize(access_token)
     @client = ::OpenAI::Client.new(access_token: access_token)
   end
 
   def supports_model?(model)
-    MODELS.include?(model)
+    MODELS.key?(model)
+  end
+
+  def model_options
+    MODELS.map do |id, name|
+      Ai::ModelCatalog::ModelOption.new(
+        id: id,
+        name: name,
+        provider: :openai
+      )
+    end
   end
 
   def auto_categorize(transactions: [], user_categories: [])
