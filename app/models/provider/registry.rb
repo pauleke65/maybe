@@ -67,6 +67,14 @@ class Provider::Registry
 
         Provider::Openai.new(access_token)
       end
+
+      def gemini
+        api_key = ENV.fetch("GEMINI_API_KEY", Setting.gemini_api_key)
+
+        return nil unless api_key.present?
+
+        Provider::Gemini.new(api_key)
+      end
   end
 
   def initialize(concept)
@@ -96,9 +104,9 @@ class Provider::Registry
       when :securities
         %i[synth]
       when :llm
-        %i[openai]
+        %i[openai gemini]
       else
-        %i[synth plaid_us plaid_eu github openai]
+        %i[synth plaid_us plaid_eu github openai gemini]
       end
     end
 end

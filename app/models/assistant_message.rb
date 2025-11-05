@@ -1,5 +1,8 @@
 class AssistantMessage < Message
-  validates :ai_model, presence: true
+  validates :ai_model, presence: true, inclusion: {
+    in: -> (_) { Message.supported_ai_models },
+    message: "%{value} is not a supported AI model"
+  }
 
   def role
     "assistant"
