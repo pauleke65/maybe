@@ -15,6 +15,15 @@ class Message < ApplicationRecord
 
   scope :ordered, -> { order(created_at: :asc) }
 
+  class << self
+    def supported_ai_models
+      registry = Provider::Registry.for_concept(:llm)
+      registry.providers.compact.flat_map do |provider|
+        provider.class::MODELS
+      end
+    end
+  end
+
   private
     def broadcast?
       true
